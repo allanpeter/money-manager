@@ -117,10 +117,10 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Pr
               </div>
               <div className="mt-2 ml-6">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-zinc-500 text-xs">{formatCurrency(value)}</span>
-                  <span className="text-zinc-600 text-xs">{bucket.percentage}% do saldo</span>
+                  <span className="text-zinc-300 text-sm font-medium">{formatCurrency(value)}</span>
+                  <span className="text-zinc-400 text-sm">{bucket.percentage}% do saldo</span>
                 </div>
-                <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                <div className="h-2.5 bg-zinc-700 rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
@@ -136,7 +136,7 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Pr
       </div>
 
       {totalPct < 100 && remainder > 0 && (
-        <div className="mt-3 text-center text-zinc-600 text-xs">
+        <div className="mt-3 text-center text-zinc-500 text-sm">
           {100 - totalPct}% não alocado · {formatCurrency(remainder * (100 - totalPct) / 100)} livre
         </div>
       )}
