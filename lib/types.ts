@@ -24,3 +24,14 @@ export interface AppData {
   expenseCategories: ExpenseCategory[]
   investmentBuckets: InvestmentBucket[]
 }
+
+export interface MonthRecord {
+  id: string
+  label: string
+  data: AppData
+}
+
+export interface MultiMonthStore {
+  activeId: string
+  months: MonthRecord[]
+}
