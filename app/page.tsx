@@ -5,12 +5,14 @@ import { ExpensesSection } from "@/components/ExpensesSection"
 import { InvestmentSection } from "@/components/InvestmentSection"
 import { SummaryBar } from "@/components/SummaryBar"
 import { ExpenseChart, InvestmentChart } from "@/components/Charts"
+import { MonthSelector } from "@/components/MonthSelector"
 
 export default function Home() {
   const {
     data, loaded,
     totalIncome, totalExpenses, remainder, totalPct,
     updateIncome, updateExpenses, updateBuckets,
+    months, activeId, switchMonth, createMonth, renameMonth, deleteMonth, nextMonthLabel,
   } = useAppData()
 
   if (!loaded) {
@@ -33,6 +35,16 @@ export default function Home() {
             Controle seus gastos e distribua o que sobra de forma inteligente
           </p>
         </div>
+
+        <MonthSelector
+          months={months}
+          activeId={activeId}
+          nextMonthLabel={nextMonthLabel}
+          onSwitch={switchMonth}
+          onCreate={createMonth}
+          onRename={renameMonth}
+          onDelete={deleteMonth}
+        />
 
         <SummaryBar
           income={totalIncome}
