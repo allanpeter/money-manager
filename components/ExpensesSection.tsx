@@ -10,7 +10,7 @@ interface Props {
   onChange: (categories: ExpenseCategory[]) => void
 }
 
-export function ExpensesSection({ categories, total, onChange }: Props) {
+export function ExpensesSection({ categories, total, onChange }: Readonly<Props>) {
   const [editingId, setEditingId] = useState<string | null>(null)
 
   function update(id: string, field: keyof ExpenseCategory, value: string | number) {
@@ -69,27 +69,27 @@ export function ExpensesSection({ categories, total, onChange }: Props) {
                   onKeyDown={e => e.key === "Enter" && setEditingId(null)}
                 />
               ) : (
-                <span
-                  className="text-zinc-300 text-sm flex-1 cursor-pointer hover:text-white transition-colors"
+                <button
+                  className="text-zinc-300 text-sm flex-1 text-left cursor-pointer hover:text-white transition-colors"
                   onClick={() => setEditingId(cat.id)}
                 >
                   {cat.name}
-                </span>
+                </button>
               )}
               <div className="flex items-center gap-1 text-zinc-400">
                 <span className="text-sm">R$</span>
                 <input
                   type="number"
                   min={0}
-                  className="bg-zinc-700/60 text-white text-sm rounded-lg px-3 py-1.5 w-32 outline-none focus:ring-1 focus:ring-red-500/50 text-right"
+                  className="bg-zinc-700/60 text-white text-sm rounded-lg px-3 py-1.5 w-24 sm:w-32 outline-none focus:ring-1 focus:ring-red-500/50 text-right"
                   value={cat.amount || ""}
                   placeholder="0,00"
-                  onChange={e => update(cat.id, "amount", parseFloat(e.target.value) || 0)}
+                  onChange={e => update(cat.id, "amount", Number.parseFloat(e.target.value) || 0)}
                 />
               </div>
               <button
                 onClick={() => remove(cat.id)}
-                className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all"
+                className="text-zinc-600 hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -99,7 +99,7 @@ export function ExpensesSection({ categories, total, onChange }: Props) {
               <input
                 type="text"
                 placeholder="Cartão (opcional)"
-                className="bg-transparent text-zinc-500 text-xs outline-none hover:text-zinc-400 focus:text-zinc-300 transition-colors w-48"
+                className="bg-transparent text-zinc-500 text-xs outline-none hover:text-zinc-400 focus:text-zinc-300 transition-colors flex-1"
                 value={cat.card || ""}
                 onChange={e => update(cat.id, "card", e.target.value)}
               />

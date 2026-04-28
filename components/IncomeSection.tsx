@@ -12,7 +12,7 @@ interface Props {
 
 function uid() { return Math.random().toString(36).slice(2) }
 
-export function IncomeSection({ sources, total, onChange }: Props) {
+export function IncomeSection({ sources, total, onChange }: Readonly<Props>) {
   const [editingId, setEditingId] = useState<string | null>(null)
 
   function update(id: string, field: keyof IncomeSource, value: string | number) {
@@ -60,28 +60,28 @@ export function IncomeSection({ sources, total, onChange }: Props) {
                 onKeyDown={e => e.key === "Enter" && setEditingId(null)}
               />
             ) : (
-              <span
-                className="text-zinc-300 text-sm flex-1 cursor-pointer hover:text-white transition-colors"
+              <button
+                className="text-zinc-300 text-sm flex-1 text-left cursor-pointer hover:text-white transition-colors"
                 onClick={() => setEditingId(source.id)}
               >
                 {source.name}
-              </span>
+              </button>
             )}
             <div className="flex items-center gap-1 text-zinc-400">
               <span className="text-sm">R$</span>
               <input
                 type="number"
                 min={0}
-                className="bg-zinc-700/60 text-white text-sm rounded-lg px-3 py-1.5 w-32 outline-none focus:ring-1 focus:ring-emerald-500/50 text-right"
+                className="bg-zinc-700/60 text-white text-sm rounded-lg px-3 py-1.5 w-24 sm:w-32 outline-none focus:ring-1 focus:ring-emerald-500/50 text-right"
                 value={source.amount || ""}
                 placeholder="0,00"
-                onChange={e => update(source.id, "amount", parseFloat(e.target.value) || 0)}
+                onChange={e => update(source.id, "amount", Number.parseFloat(e.target.value) || 0)}
               />
             </div>
             {sources.length > 1 && (
               <button
                 onClick={() => remove(source.id)}
-                className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all"
+                className="text-zinc-600 hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
