@@ -11,7 +11,7 @@ interface Props {
   onChange: (buckets: InvestmentBucket[]) => void
 }
 
-export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Props) {
+export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Readonly<Props>) {
   const [editingId, setEditingId] = useState<string | null>(null)
 
   function update(id: string, field: keyof InvestmentBucket, value: string | number) {
@@ -89,12 +89,12 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Pr
                     onKeyDown={e => e.key === "Enter" && setEditingId(null)}
                   />
                 ) : (
-                  <span
-                    className="text-zinc-300 text-sm flex-1 cursor-pointer hover:text-white transition-colors"
+                  <button
+                    className="text-zinc-300 text-sm flex-1 text-left cursor-pointer hover:text-white transition-colors"
                     onClick={() => setEditingId(bucket.id)}
                   >
                     {bucket.name}
-                  </span>
+                  </button>
                 )}
                 <div className="flex items-center gap-2">
                   <input
@@ -104,13 +104,13 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Pr
                     className="bg-zinc-700/60 text-white text-sm rounded-lg px-3 py-1.5 w-20 outline-none focus:ring-1 focus:ring-cyan-500/50 text-right"
                     value={bucket.percentage || ""}
                     placeholder="0"
-                    onChange={e => update(bucket.id, "percentage", parseFloat(e.target.value) || 0)}
+                    onChange={e => update(bucket.id, "percentage", Number.parseFloat(e.target.value) || 0)}
                   />
                   <span className="text-zinc-500 text-sm">%</span>
                 </div>
                 <button
                   onClick={() => remove(bucket.id)}
-                  className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all"
+                  className="text-zinc-600 hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
