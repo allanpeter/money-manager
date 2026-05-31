@@ -21,7 +21,7 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Re
   function add() {
     const next: InvestmentBucket = {
       id: uid(),
-      name: "Novo Balde",
+      name: "Nova Meta",
       percentage: 0,
       color: COLORS[(buckets.length + 4) % COLORS.length],
     }
@@ -43,8 +43,8 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Re
             <PiggyBank className="w-5 h-5 text-cyan-400" />
           </div>
           <div>
-            <h2 className="text-white font-semibold text-lg">Investimentos</h2>
-            <p className="text-zinc-500 text-sm">Distribuição do saldo livre</p>
+            <h2 className="text-white font-semibold text-lg">Metas</h2>
+            <p className="text-zinc-500 text-sm">Distribuição do que sobra</p>
           </div>
         </div>
         <div className="text-right">
@@ -69,9 +69,27 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Re
         </div>
       )}
 
+      {buckets.length === 0 && (
+        <div className="text-center py-6 px-4 mb-3 rounded-xl border border-dashed border-zinc-800">
+          <p className="text-zinc-400 text-sm mb-1">Crie metas para o dinheiro que sobra</p>
+          <p className="text-zinc-600 text-xs">Ex.: Reserva de emergência, Viagem, Aporte</p>
+        </div>
+      )}
+
       <div className="space-y-3">
         {buckets.map(bucket => {
           const value = remainder > 0 ? (remainder * bucket.percentage) / 100 : 0
+          const target = bucket.targetAmount ?? 0
+          const saved = bucket.saved ?? 0
+          const hasGoal = target > 0
+          const goalPct = hasGoal ? Math.min(100, (saved / target) * 100) : 0
+          const missing = Math.max(0, target - saved)
+          let eta = ""
+          if (hasGoal) {
+            if (missing <= 0) eta = "Meta atingida 🎉"
+            else if (value > 0) eta = `faltam ~${Math.ceil(missing / value)} meses`
+            else eta = "defina um aporte mensal"
+          }
           return (
             <div key={bucket.id} className="bg-zinc-800/50 rounded-xl p-3 group">
               <div className="flex items-center gap-3">
@@ -101,6 +119,8 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Re
                     type="number"
                     min={0}
                     max={100}
+                    inputMode="decimal"
+                    enterKeyHint="done"
                     className="bg-zinc-700/60 text-white text-sm rounded-lg px-3 py-1.5 w-20 outline-none focus:ring-1 focus:ring-cyan-500/50 text-right"
                     value={bucket.percentage || ""}
                     placeholder="0"
@@ -115,9 +135,10 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Re
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
+
               <div className="mt-2 ml-6">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-zinc-300 text-sm font-medium">{formatCurrency(value)}</span>
+                  <span className="text-zinc-300 text-sm font-medium">{formatCurrency(value)}/mês</span>
                   <span className="text-zinc-400 text-sm">{bucket.percentage}% do saldo</span>
                 </div>
                 <div className="h-2.5 bg-zinc-700 rounded-full overflow-hidden">
@@ -130,6 +151,45 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Re
                   />
                 </div>
               </div>
+
+              <div className="mt-3 ml-6 flex items-center gap-3 flex-wrap text-xs">
+                <label className="flex items-center gap-1.5 text-zinc-500">
+                  Meta
+                  <input
+                    type="number"
+                    min={0}
+                    inputMode="decimal"
+                    className="bg-zinc-700/40 text-zinc-200 rounded-lg px-2 py-1 w-24 outline-none focus:ring-1 focus:ring-cyan-500/50 text-right"
+                    value={bucket.targetAmount || ""}
+                    placeholder="—"
+                    onChange={e => update(bucket.id, "targetAmount", Number.parseFloat(e.target.value) || 0)}
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-zinc-500">
+                  Guardado
+                  <input
+                    type="number"
+                    min={0}
+                    inputMode="decimal"
+                    className="bg-zinc-700/40 text-zinc-200 rounded-lg px-2 py-1 w-24 outline-none focus:ring-1 focus:ring-cyan-500/50 text-right"
+                    value={bucket.saved || ""}
+                    placeholder="0"
+                    onChange={e => update(bucket.id, "saved", Number.parseFloat(e.target.value) || 0)}
+                  />
+                </label>
+                {hasGoal && <span className="text-cyan-400/80">{eta}</span>}
+              </div>
+
+              {hasGoal && (
+                <div className="mt-2 ml-6">
+                  <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-cyan-400/70 transition-all duration-500"
+                      style={{ width: `${goalPct}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
@@ -146,7 +206,7 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Re
         className="mt-3 w-full flex items-center justify-center gap-2 text-zinc-500 hover:text-cyan-400 text-sm py-2.5 rounded-xl border border-dashed border-zinc-700 hover:border-cyan-500/50 transition-all"
       >
         <Plus className="w-4 h-4" />
-        Adicionar balde
+        Adicionar meta
       </button>
     </div>
   )

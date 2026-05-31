@@ -6,6 +6,7 @@ import { InvestmentSection } from "@/components/InvestmentSection"
 import { SummaryBar } from "@/components/SummaryBar"
 import { ExpenseChart, InvestmentChart } from "@/components/Charts"
 import { MonthSelector } from "@/components/MonthSelector"
+import { DataControls } from "@/components/DataControls"
 
 export default function Home() {
   const {
@@ -13,6 +14,7 @@ export default function Home() {
     totalIncome, totalExpenses, remainder, totalPct,
     updateIncome, updateExpenses, updateBuckets,
     months, activeId, switchMonth, createMonth, renameMonth, deleteMonth, nextMonthLabel,
+    exportJSON, importJSON,
   } = useAppData()
 
   if (!loaded) {
@@ -85,9 +87,7 @@ export default function Home() {
           onChange={updateBuckets}
         />
 
-        <p className="text-center text-zinc-700 text-xs pb-4">
-          Dados salvos localmente no seu navegador
-        </p>
+        <DataControls exportJSON={exportJSON} importJSON={importJSON} />
       </div>
     </div>
   )

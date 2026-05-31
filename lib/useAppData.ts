@@ -2,10 +2,11 @@
 import { useState, useEffect, useCallback } from "react"
 import { AppData, IncomeSource, ExpenseCategory, InvestmentBucket, MonthRecord, MultiMonthStore } from "./types"
 import { DEFAULT_DATA } from "./defaults"
-import { uid } from "./utils"
+import { uid, DEFAULT_CURRENCY, DEFAULT_LOCALE } from "./utils"
 
 const LEGACY_KEY = "money-manager-data"
 const STORE_KEY  = "money-manager-store"
+const SCHEMA_VERSION = 1
 
 function currentMonthId() {
   const now = new Date()
@@ -23,7 +24,47 @@ function nextMonthLabel() {
 }
 
 function makeStore(data: AppData, label: string, id: string): MultiMonthStore {
-  return { activeId: id, months: [{ id, label, data }] }
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    activeId: id,
+    months: [{ id, label, data }],
+    currency: DEFAULT_CURRENCY,
+    locale: DEFAULT_LOCALE,
+  }
+}
+
+/** Upgrades a parsed store from any older shape to the current schema. */
+function migrate(raw: unknown): MultiMonthStore {
+  const store = raw as Partial<MultiMonthStore> & {
+    months?: { id: string; label: string; data: Partial<AppData> }[]
+  }
+  const months: MonthRecord[] = (store.months ?? []).map(m => ({
+    id: m.id,
+    label: m.label,
+    data: {
+      incomeSources: m.data?.incomeSources ?? [],
+      // v0 expenses carried a free-text `card` field and no `type`; drop card, default type.
+      expenseCategories: (m.data?.expenseCategories ?? []).map((c) => {
+        const cat = c as ExpenseCategory
+        return {
+          id: cat.id,
+          name: cat.name,
+          amount: cat.amount,
+          type: cat.type ?? "variable",
+          paymentMethod: cat.paymentMethod,
+          color: cat.color,
+        }
+      }),
+      investmentBuckets: m.data?.investmentBuckets ?? [],
+    },
+  }))
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    activeId: store.activeId ?? months[0]?.id ?? "",
+    months,
+    currency: store.currency ?? DEFAULT_CURRENCY,
+    locale: store.locale ?? DEFAULT_LOCALE,
+  }
 }
 
 export function useAppData() {
@@ -34,13 +75,16 @@ export function useAppData() {
     try {
       const saved = localStorage.getItem(STORE_KEY)
       if (saved) {
-        setStore(JSON.parse(saved))
+        const parsed = JSON.parse(saved)
+        const store = parsed?.schemaVersion === SCHEMA_VERSION ? parsed : migrate(parsed)
+        if (store !== parsed) localStorage.setItem(STORE_KEY, JSON.stringify(store))
+        setStore(store)
         setLoaded(true)
         return
       }
       const legacy = localStorage.getItem(LEGACY_KEY)
       if (legacy) {
-        const migrated = makeStore(JSON.parse(legacy), "Mês atual", uid())
+        const migrated = migrate(makeStore(JSON.parse(legacy), "Mês atual", uid()))
         localStorage.setItem(STORE_KEY, JSON.stringify(migrated))
         setStore(migrated)
         setLoaded(true)
@@ -104,7 +148,7 @@ export function useAppData() {
       investmentBuckets: buckets,
     }
     const newMonth: MonthRecord = { id, label, data: newData }
-    saveStore({ activeId: id, months: [...store.months, newMonth] })
+    saveStore({ ...store, activeId: id, months: [...store.months, newMonth] })
   }
 
   function renameMonth(id: string, label: string) {
@@ -116,7 +160,23 @@ export function useAppData() {
     if (!store || store.months.length <= 1) return
     const remaining = store.months.filter(m => m.id !== id)
     const activeId = store.activeId === id ? remaining[0].id : store.activeId
-    saveStore({ activeId, months: remaining })
+    saveStore({ ...store, activeId, months: remaining })
+  }
+
+  function exportJSON(): string {
+    return JSON.stringify(store, null, 2)
+  }
+
+  /** Parses, migrates and replaces the whole store. Returns false on invalid input. */
+  function importJSON(text: string): boolean {
+    try {
+      const parsed = JSON.parse(text)
+      if (!parsed || !Array.isArray(parsed.months) || parsed.months.length === 0) return false
+      saveStore(migrate(parsed))
+      return true
+    } catch {
+      return false
+    }
   }
 
   return {
@@ -136,5 +196,9 @@ export function useAppData() {
     renameMonth,
     deleteMonth,
     nextMonthLabel,
+    currency: store?.currency ?? DEFAULT_CURRENCY,
+    locale: store?.locale ?? DEFAULT_LOCALE,
+    exportJSON,
+    importJSON,
   }
 }

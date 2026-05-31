@@ -131,7 +131,7 @@ export function MonthSelector({ months, activeId, nextMonthLabel, onSwitch, onCr
               checked={copyBuckets}
               onChange={e => setCopyBuckets(e.target.checked)}
             />
-            Copiar investimentos do mês actual
+            Copiar metas do mês atual
           </label>
           <div className="flex items-center gap-3">
             <button
