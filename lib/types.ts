@@ -1,6 +1,9 @@
 export type ExpenseType = "fixed" | "variable"
 export type PaymentMethod = "pix" | "credit" | "debit" | "cash"
 
+/** Sentinel wallet id selecting the read-only consolidated view across all wallets. */
+export const ALL_WALLETS = "__all__"
+
 export interface IncomeSource {
   id: string
   name: string
@@ -34,15 +37,24 @@ export interface AppData {
 }
 
 export interface MonthRecord {
+  /** Always "YYYY-MM". The display label is derived from this, never stored. */
   id: string
-  label: string
   data: AppData
 }
 
-export interface MultiMonthStore {
-  schemaVersion: number
-  activeId: string
+export interface Wallet {
+  id: string
+  name: string
   months: MonthRecord[]
+}
+
+export interface MultiWalletStore {
+  schemaVersion: number
+  wallets: Wallet[]
+  /** A wallet id, or ALL_WALLETS for the consolidated view. */
+  activeWalletId: string
+  /** "YYYY-MM", shared across wallets. */
+  activeMonthId: string
   currency: string
   locale: string
 }
