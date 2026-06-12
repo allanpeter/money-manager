@@ -2,15 +2,13 @@
 import { useState } from "react"
 import { Plus, Trash2, TrendingUp } from "lucide-react"
 import { IncomeSource } from "@/lib/types"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, uid } from "@/lib/utils"
 
 interface Props {
   sources: IncomeSource[]
   total: number
   onChange: (sources: IncomeSource[]) => void
 }
-
-function uid() { return Math.random().toString(36).slice(2) }
 
 export function IncomeSection({ sources, total, onChange }: Readonly<Props>) {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -72,6 +70,8 @@ export function IncomeSection({ sources, total, onChange }: Readonly<Props>) {
               <input
                 type="number"
                 min={0}
+                inputMode="decimal"
+                enterKeyHint="done"
                 className="bg-zinc-700/60 text-white text-sm rounded-lg px-3 py-1.5 w-24 sm:w-32 outline-none focus:ring-1 focus:ring-emerald-500/50 text-right"
                 value={source.amount || ""}
                 placeholder="0,00"

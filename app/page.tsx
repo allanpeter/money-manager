@@ -6,13 +6,19 @@ import { InvestmentSection } from "@/components/InvestmentSection"
 import { SummaryBar } from "@/components/SummaryBar"
 import { ExpenseChart, InvestmentChart } from "@/components/Charts"
 import { MonthSelector } from "@/components/MonthSelector"
+import { WalletSelector } from "@/components/WalletSelector"
+import { WalletBreakdown } from "@/components/WalletBreakdown"
+import { DataControls } from "@/components/DataControls"
 
 export default function Home() {
   const {
     data, loaded,
     totalIncome, totalExpenses, remainder, totalPct,
     updateIncome, updateExpenses, updateBuckets,
-    months, activeId, switchMonth, createMonth, renameMonth, deleteMonth, nextMonthLabel,
+    windowMonths, activeMonthId, switchMonth, shiftWindow,
+    wallets, activeWalletId, isConsolidated, walletBreakdown,
+    switchWallet, createWallet, renameWallet, deleteWallet,
+    exportJSON, importJSON,
   } = useAppData()
 
   if (!loaded) {
@@ -36,14 +42,21 @@ export default function Home() {
           </p>
         </div>
 
+        <WalletSelector
+          wallets={wallets}
+          activeWalletId={activeWalletId}
+          onSwitch={switchWallet}
+          onCreate={createWallet}
+          onRename={renameWallet}
+          onDelete={deleteWallet}
+        />
+
         <MonthSelector
-          months={months}
-          activeId={activeId}
-          nextMonthLabel={nextMonthLabel}
+          windowMonths={windowMonths}
+          activeMonthId={activeMonthId}
           onSwitch={switchMonth}
-          onCreate={createMonth}
-          onRename={renameMonth}
-          onDelete={deleteMonth}
+          onPrev={() => shiftWindow(-1)}
+          onNext={() => shiftWindow(1)}
         />
 
         <SummaryBar
@@ -65,29 +78,33 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <IncomeSection
-            sources={data.incomeSources}
-            total={totalIncome}
-            onChange={updateIncome}
-          />
-          <ExpensesSection
-            categories={data.expenseCategories}
-            total={totalExpenses}
-            onChange={updateExpenses}
-          />
-        </div>
+        {isConsolidated ? (
+          <WalletBreakdown breakdown={walletBreakdown} />
+        ) : (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <IncomeSection
+                sources={data.incomeSources}
+                total={totalIncome}
+                onChange={updateIncome}
+              />
+              <ExpensesSection
+                categories={data.expenseCategories}
+                total={totalExpenses}
+                onChange={updateExpenses}
+              />
+            </div>
 
-        <InvestmentSection
-          buckets={data.investmentBuckets}
-          remainder={remainder}
-          totalPct={totalPct}
-          onChange={updateBuckets}
-        />
+            <InvestmentSection
+              buckets={data.investmentBuckets}
+              remainder={remainder}
+              totalPct={totalPct}
+              onChange={updateBuckets}
+            />
+          </>
+        )}
 
-        <p className="text-center text-zinc-700 text-xs pb-4">
-          Dados salvos localmente no seu navegador
-        </p>
+        <DataControls exportJSON={exportJSON} importJSON={importJSON} />
       </div>
     </div>
   )

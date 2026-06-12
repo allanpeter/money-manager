@@ -1,8 +1,18 @@
-export function formatCurrency(value: number): string {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+export const DEFAULT_CURRENCY = "BRL"
+export const DEFAULT_LOCALE = "pt-BR"
+
+export function formatCurrency(
+  value: number,
+  currency: string = DEFAULT_CURRENCY,
+  locale: string = DEFAULT_LOCALE,
+): string {
+  return value.toLocaleString(locale, { style: "currency", currency })
 }
 
 export function uid(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID()
+  }
   return Math.random().toString(36).slice(2)
 }
 

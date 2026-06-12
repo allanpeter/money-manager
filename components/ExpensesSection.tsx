@@ -1,13 +1,20 @@
 "use client"
 import { useState } from "react"
-import { Plus, Trash2, CreditCard, ShoppingCart } from "lucide-react"
-import { ExpenseCategory } from "@/lib/types"
+import { Plus, Trash2, ShoppingCart } from "lucide-react"
+import { ExpenseCategory, ExpenseType, PaymentMethod } from "@/lib/types"
 import { formatCurrency, uid, COLORS } from "@/lib/utils"
 
 interface Props {
   categories: ExpenseCategory[]
   total: number
   onChange: (categories: ExpenseCategory[]) => void
+}
+
+const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  pix: "Pix",
+  credit: "Crédito",
+  debit: "Débito",
+  cash: "Dinheiro",
 }
 
 export function ExpensesSection({ categories, total, onChange }: Readonly<Props>) {
@@ -17,12 +24,20 @@ export function ExpensesSection({ categories, total, onChange }: Readonly<Props>
     onChange(categories.map(c => c.id === id ? { ...c, [field]: value } : c))
   }
 
+  function setType(id: string, type: ExpenseType) {
+    onChange(categories.map(c => c.id === id ? { ...c, type } : c))
+  }
+
+  function setPayment(id: string, paymentMethod: PaymentMethod | undefined) {
+    onChange(categories.map(c => c.id === id ? { ...c, paymentMethod } : c))
+  }
+
   function add() {
     const next: ExpenseCategory = {
       id: uid(),
       name: "Nova Categoria",
       amount: 0,
-      card: "",
+      type: "variable",
       color: COLORS[categories.length % COLORS.length],
     }
     onChange([...categories, next])
@@ -50,6 +65,13 @@ export function ExpensesSection({ categories, total, onChange }: Readonly<Props>
           <p className="text-red-400 font-bold text-xl">{formatCurrency(total)}</p>
         </div>
       </div>
+
+      {categories.length === 0 && (
+        <div className="text-center py-6 px-4 mb-3 rounded-xl border border-dashed border-zinc-800">
+          <p className="text-zinc-400 text-sm mb-1">Comece pelos seus 2 ou 3 maiores gastos</p>
+          <p className="text-zinc-600 text-xs">Ex.: Moradia, Alimentação, Transporte</p>
+        </div>
+      )}
 
       <div className="space-y-3">
         {categories.map(cat => (
@@ -81,6 +103,8 @@ export function ExpensesSection({ categories, total, onChange }: Readonly<Props>
                 <input
                   type="number"
                   min={0}
+                  inputMode="decimal"
+                  enterKeyHint="done"
                   className="bg-zinc-700/60 text-white text-sm rounded-lg px-3 py-1.5 w-24 sm:w-32 outline-none focus:ring-1 focus:ring-red-500/50 text-right"
                   value={cat.amount || ""}
                   placeholder="0,00"
@@ -94,15 +118,35 @@ export function ExpensesSection({ categories, total, onChange }: Readonly<Props>
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
-            <div className="mt-2 ml-6 flex items-center gap-2">
-              <CreditCard className="w-3.5 h-3.5 text-zinc-600" />
-              <input
-                type="text"
-                placeholder="Cartão (opcional)"
-                className="bg-transparent text-zinc-500 text-xs outline-none hover:text-zinc-400 focus:text-zinc-300 transition-colors flex-1"
-                value={cat.card || ""}
-                onChange={e => update(cat.id, "card", e.target.value)}
-              />
+            <div className="mt-2 ml-6 flex items-center gap-2 flex-wrap">
+              <div className="flex bg-zinc-700/40 rounded-lg p-0.5 text-xs">
+                <button
+                  onClick={() => setType(cat.id, "fixed")}
+                  className={`px-2 py-0.5 rounded-md transition-colors ${
+                    cat.type === "fixed" ? "bg-zinc-600 text-white" : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  Fixo
+                </button>
+                <button
+                  onClick={() => setType(cat.id, "variable")}
+                  className={`px-2 py-0.5 rounded-md transition-colors ${
+                    cat.type === "variable" ? "bg-zinc-600 text-white" : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  Variável
+                </button>
+              </div>
+              <select
+                value={cat.paymentMethod ?? ""}
+                onChange={e => setPayment(cat.id, (e.target.value || undefined) as PaymentMethod | undefined)}
+                className="bg-zinc-700/40 text-zinc-400 text-xs rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-red-500/50"
+              >
+                <option value="">Forma de pgto</option>
+                {(Object.keys(PAYMENT_LABELS) as PaymentMethod[]).map(m => (
+                  <option key={m} value={m}>{PAYMENT_LABELS[m]}</option>
+                ))}
+              </select>
             </div>
           </div>
         ))}
