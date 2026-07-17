@@ -2,6 +2,7 @@
 import { useAppData } from "@/lib/useAppData"
 import { IncomeSection } from "@/components/IncomeSection"
 import { ExpensesSection } from "@/components/ExpensesSection"
+import { RecurringIncomeSection } from "@/components/RecurringIncomeSection"
 import { RecurringExpensesSection } from "@/components/RecurringExpensesSection"
 import { InvestmentSection } from "@/components/InvestmentSection"
 import { SummaryBar } from "@/components/SummaryBar"
@@ -15,8 +16,9 @@ import { DataControls } from "@/components/DataControls"
 export default function Home() {
   const {
     data, loaded,
-    totalIncome, manualExpenses, totalExpenses, remainder, totalPct,
+    totalIncome, manualIncome, manualExpenses, totalExpenses, remainder, totalPct,
     updateIncome, updateExpenses, updateBuckets,
+    recurringIncomes, updateRecurringIncomes,
     recurringExpenses, activeRecurringExpenses, updateRecurringExpenses, forecast,
     windowMonths, activeMonthId, switchMonth, shiftWindow,
     wallets, activeWalletId, isConsolidated, walletBreakdown,
@@ -81,7 +83,7 @@ export default function Home() {
           </div>
         </div>
 
-        <MonthlyForecast months={forecast} incomeReference={totalIncome} />
+        <MonthlyForecast months={forecast} />
 
         {isConsolidated ? (
           <WalletBreakdown breakdown={walletBreakdown} />
@@ -90,7 +92,7 @@ export default function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <IncomeSection
                 sources={data.incomeSources}
-                total={totalIncome}
+                total={manualIncome}
                 onChange={updateIncome}
               />
               <ExpensesSection
@@ -100,10 +102,16 @@ export default function Home() {
               />
             </div>
 
-            <RecurringExpensesSection
-              items={recurringExpenses}
-              onChange={updateRecurringExpenses}
-            />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <RecurringIncomeSection
+                items={recurringIncomes}
+                onChange={updateRecurringIncomes}
+              />
+              <RecurringExpensesSection
+                items={recurringExpenses}
+                onChange={updateRecurringExpenses}
+              />
+            </div>
 
             <InvestmentSection
               buckets={data.investmentBuckets}

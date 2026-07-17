@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect, useCallback, useMemo } from "react"
 import {
-  AppData, IncomeSource, ExpenseCategory, InvestmentBucket, RecurringExpense,
+  AppData, IncomeSource, ExpenseCategory, InvestmentBucket, RecurringExpense, RecurringIncome,
   MonthRecord, Wallet, MultiWalletStore, ALL_WALLETS,
 } from "./types"
 import { DEFAULT_DATA } from "./defaults"
@@ -10,7 +10,7 @@ import { currentMonthId, isMonthId, monthLabel, shiftMonth, monthWindow, monthRa
 
 const LEGACY_KEY = "money-manager-data"
 const STORE_KEY  = "money-manager-store"
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 const FORECAST_MONTHS = 12
 
 const PT_MONTHS = [
@@ -64,7 +64,7 @@ function freshStore(): MultiWalletStore {
   const walletId = uid()
   return {
     schemaVersion: SCHEMA_VERSION,
-    wallets: [{ id: walletId, name: "Pessoal", months: [{ id, data: clone(DEFAULT_DATA) }], recurringExpenses: [] }],
+    wallets: [{ id: walletId, name: "Pessoal", months: [{ id, data: clone(DEFAULT_DATA) }], recurringExpenses: [], recurringIncomes: [] }],
     activeWalletId: walletId,
     activeMonthId: id,
     currency: DEFAULT_CURRENCY,
@@ -82,7 +82,7 @@ function migrate(raw: unknown): MultiWalletStore {
     activeId?: string
   }
 
-  // Already v2/v3-shaped: just normalize month data and validate ids.
+  // Already v2+-shaped: just normalize month data and validate ids.
   if (Array.isArray(obj.wallets)) {
     const wallets: Wallet[] = obj.wallets.map(w => ({
       id: w.id ?? uid(),
@@ -91,6 +91,7 @@ function migrate(raw: unknown): MultiWalletStore {
         .filter(m => isMonthId(m.id))
         .map(m => ({ id: m.id, data: cleanData(m.data) })),
       recurringExpenses: w.recurringExpenses ?? [],
+      recurringIncomes: w.recurringIncomes ?? [],
     }))
     return {
       schemaVersion: SCHEMA_VERSION,
@@ -124,7 +125,7 @@ function migrate(raw: unknown): MultiWalletStore {
 
   return {
     schemaVersion: SCHEMA_VERSION,
-    wallets: [{ id: walletId, name: "Pessoal", months, recurringExpenses: [] }],
+    wallets: [{ id: walletId, name: "Pessoal", months, recurringExpenses: [], recurringIncomes: [] }],
     activeWalletId: walletId,
     activeMonthId,
     currency: obj.currency ?? DEFAULT_CURRENCY,
@@ -148,8 +149,8 @@ function getMonthData(wallet: Wallet, monthId: string): AppData {
   }
 }
 
-/** Whether a recurring expense is active in the given month. */
-function isRecurringActive(r: RecurringExpense, monthId: string): boolean {
+/** Whether a recurring expense/income entry is active in the given month. */
+function isRecurringActive(r: { startMonth: string; installments?: number }, monthId: string): boolean {
   if (monthId < r.startMonth) return false
   if (r.installments == null) return true
   return monthId <= shiftMonth(r.startMonth, r.installments - 1)
@@ -158,6 +159,11 @@ function isRecurringActive(r: RecurringExpense, monthId: string): boolean {
 /** Recurring expenses of a wallet active in the given month. */
 function recurringForWallet(wallet: Wallet, monthId: string): RecurringExpense[] {
   return wallet.recurringExpenses.filter(r => isRecurringActive(r, monthId))
+}
+
+/** Recurring incomes of a wallet active in the given month. */
+function recurringIncomeForWallet(wallet: Wallet, monthId: string): RecurringIncome[] {
+  return wallet.recurringIncomes.filter(r => isRecurringActive(r, monthId))
 }
 
 /** Consolidated data across all wallets for a month. Ids are wallet-prefixed to stay unique. */
@@ -234,7 +240,21 @@ export function useAppData() {
     return wallet ? recurringForWallet(wallet, store.activeMonthId).map(toExpenseCategory) : []
   }, [store])
 
-  const totalIncome = data.incomeSources.reduce((s, i) => s + i.amount, 0)
+  /** Recurring incomes active in the active month, shaped as IncomeSource so they can join the manual list in totals. */
+  const activeRecurringIncomes = useMemo<IncomeSource[]>(() => {
+    if (!store) return []
+    const toIncomeSource = (r: RecurringIncome): IncomeSource => ({ id: r.id, name: r.name, amount: r.amount })
+    if (store.activeWalletId === ALL_WALLETS) {
+      return store.wallets.flatMap(w =>
+        recurringIncomeForWallet(w, store.activeMonthId).map(r => ({ ...toIncomeSource(r), id: `${w.id}:${r.id}` })),
+      )
+    }
+    const wallet = store.wallets.find(w => w.id === store.activeWalletId)
+    return wallet ? recurringIncomeForWallet(wallet, store.activeMonthId).map(toIncomeSource) : []
+  }, [store])
+
+  const manualIncome = data.incomeSources.reduce((s, i) => s + i.amount, 0)
+  const totalIncome = manualIncome + activeRecurringIncomes.reduce((s, i) => s + i.amount, 0)
   const manualExpenses = data.expenseCategories.reduce((s, c) => s + c.amount, 0)
   const totalExpenses = manualExpenses + activeRecurringExpenses.reduce((s, c) => s + c.amount, 0)
   const remainder = totalIncome - totalExpenses
@@ -249,7 +269,9 @@ export function useAppData() {
     if (!store) return []
     return store.wallets.map(w => {
       const md = w.months.find(m => m.id === store.activeMonthId)
-      const income = md ? md.data.incomeSources.reduce((s, i) => s + i.amount, 0) : 0
+      const manualIncome = md ? md.data.incomeSources.reduce((s, i) => s + i.amount, 0) : 0
+      const recurringIncome = recurringIncomeForWallet(w, store.activeMonthId).reduce((s, r) => s + r.amount, 0)
+      const income = manualIncome + recurringIncome
       const manual = md ? md.data.expenseCategories.reduce((s, c) => s + c.amount, 0) : 0
       const recurring = recurringForWallet(w, store.activeMonthId).reduce((s, r) => s + r.amount, 0)
       const expenses = manual + recurring
@@ -257,7 +279,7 @@ export function useAppData() {
     })
   }, [store])
 
-  /** Projected total expenses (recurring + already-entered manual) for the next FORECAST_MONTHS months, starting today. */
+  /** Projected income and expenses (recurring + already-entered manual) for the next FORECAST_MONTHS months, starting today. */
   const forecast = useMemo(() => {
     if (!store) return []
     const relevantWallets =
@@ -267,12 +289,18 @@ export function useAppData() {
     return monthRange(currentMonthId(), FORECAST_MONTHS).map(id => {
       let fixed = 0
       let manual = 0
+      let income = 0
       for (const w of relevantWallets) {
         fixed += recurringForWallet(w, id).reduce((s, r) => s + r.amount, 0)
+        income += recurringIncomeForWallet(w, id).reduce((s, r) => s + r.amount, 0)
         const md = w.months.find(m => m.id === id)
-        if (md) manual += md.data.expenseCategories.reduce((s, c) => s + c.amount, 0)
+        if (md) {
+          manual += md.data.expenseCategories.reduce((s, c) => s + c.amount, 0)
+          income += md.data.incomeSources.reduce((s, i) => s + i.amount, 0)
+        }
       }
-      return { id, label: monthLabel(id, store.locale), fixed, manual, total: fixed + manual }
+      const total = fixed + manual
+      return { id, label: monthLabel(id, store.locale), fixed, manual, total, income, saldo: income - total }
     })
   }, [store])
 
@@ -309,6 +337,14 @@ export function useAppData() {
     })
   }
 
+  function updateRecurringIncomes(items: RecurringIncome[]) {
+    if (!store || isConsolidated || !activeWallet) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w => (w.id === activeWallet.id ? { ...w, recurringIncomes: items } : w)),
+    })
+  }
+
   function switchMonth(id: string) {
     if (!store) return
     saveStore({ ...store, activeMonthId: id })
@@ -326,7 +362,7 @@ export function useAppData() {
   function createWallet(name: string) {
     if (!store) return
     const id = uid()
-    const wallet: Wallet = { id, name, months: [], recurringExpenses: [] }
+    const wallet: Wallet = { id, name, months: [], recurringExpenses: [], recurringIncomes: [] }
     saveStore({ ...store, wallets: [...store.wallets, wallet], activeWalletId: id })
   }
 
@@ -368,6 +404,7 @@ export function useAppData() {
     data,
     loaded,
     totalIncome,
+    manualIncome,
     manualExpenses,
     totalExpenses,
     remainder,
@@ -375,6 +412,10 @@ export function useAppData() {
     updateIncome,
     updateExpenses,
     updateBuckets,
+    // recurring income
+    recurringIncomes: activeWallet?.recurringIncomes ?? [],
+    activeRecurringIncomes,
+    updateRecurringIncomes,
     // recurring expenses
     recurringExpenses: activeWallet?.recurringExpenses ?? [],
     activeRecurringExpenses,

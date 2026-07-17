@@ -49,6 +49,17 @@ export interface RecurringExpense {
   installments?: number
 }
 
+/** A wallet-level income source that repeats across months without needing to be re-entered. */
+export interface RecurringIncome {
+  id: string
+  name: string
+  amount: number
+  /** "YYYY-MM", the first month it applies. */
+  startMonth: string
+  /** Total number of months it repeats for. Absent means it repeats indefinitely. */
+  installments?: number
+}
+
 export interface MonthRecord {
   /** Always "YYYY-MM". The display label is derived from this, never stored. */
   id: string
@@ -60,6 +71,7 @@ export interface Wallet {
   name: string
   months: MonthRecord[]
   recurringExpenses: RecurringExpense[]
+  recurringIncomes: RecurringIncome[]
 }
 
 export interface MultiWalletStore {
