@@ -33,3 +33,8 @@ export function monthWindow(centerId: string, back = 3, fwd = 3): string[] {
   for (let i = -back; i <= fwd; i++) ids.push(shiftMonth(centerId, i))
   return ids
 }
+
+/** `count` consecutive month ids starting at `startId` (inclusive). */
+export function monthRange(startId: string, count: number): string[] {
+  return Array.from({ length: count }, (_, i) => shiftMonth(startId, i))
+}

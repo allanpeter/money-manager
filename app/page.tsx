@@ -2,19 +2,22 @@
 import { useAppData } from "@/lib/useAppData"
 import { IncomeSection } from "@/components/IncomeSection"
 import { ExpensesSection } from "@/components/ExpensesSection"
+import { RecurringExpensesSection } from "@/components/RecurringExpensesSection"
 import { InvestmentSection } from "@/components/InvestmentSection"
 import { SummaryBar } from "@/components/SummaryBar"
 import { ExpenseChart, InvestmentChart } from "@/components/Charts"
 import { MonthSelector } from "@/components/MonthSelector"
 import { WalletSelector } from "@/components/WalletSelector"
 import { WalletBreakdown } from "@/components/WalletBreakdown"
+import { MonthlyForecast } from "@/components/MonthlyForecast"
 import { DataControls } from "@/components/DataControls"
 
 export default function Home() {
   const {
     data, loaded,
-    totalIncome, totalExpenses, remainder, totalPct,
+    totalIncome, manualExpenses, totalExpenses, remainder, totalPct,
     updateIncome, updateExpenses, updateBuckets,
+    recurringExpenses, activeRecurringExpenses, updateRecurringExpenses, forecast,
     windowMonths, activeMonthId, switchMonth, shiftWindow,
     wallets, activeWalletId, isConsolidated, walletBreakdown,
     switchWallet, createWallet, renameWallet, deleteWallet,
@@ -69,7 +72,7 @@ export default function Home() {
           <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
             <h3 className="text-white font-semibold mb-1">Distribuição de Gastos</h3>
             <p className="text-zinc-500 text-sm mb-4">Por categoria</p>
-            <ExpenseChart categories={data.expenseCategories} />
+            <ExpenseChart categories={[...data.expenseCategories, ...activeRecurringExpenses]} />
           </div>
           <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
             <h3 className="text-white font-semibold mb-1">Distribuição de Investimentos</h3>
@@ -77,6 +80,8 @@ export default function Home() {
             <InvestmentChart buckets={data.investmentBuckets} remainder={remainder} />
           </div>
         </div>
+
+        <MonthlyForecast months={forecast} incomeReference={totalIncome} />
 
         {isConsolidated ? (
           <WalletBreakdown breakdown={walletBreakdown} />
@@ -90,10 +95,15 @@ export default function Home() {
               />
               <ExpensesSection
                 categories={data.expenseCategories}
-                total={totalExpenses}
+                total={manualExpenses}
                 onChange={updateExpenses}
               />
             </div>
+
+            <RecurringExpensesSection
+              items={recurringExpenses}
+              onChange={updateRecurringExpenses}
+            />
 
             <InvestmentSection
               buckets={data.investmentBuckets}

@@ -36,6 +36,19 @@ export interface AppData {
   investmentBuckets: InvestmentBucket[]
 }
 
+/** A wallet-level expense that repeats across months without needing to be re-entered. */
+export interface RecurringExpense {
+  id: string
+  name: string
+  amount: number
+  color: string
+  paymentMethod?: PaymentMethod
+  /** "YYYY-MM", the first month it applies. */
+  startMonth: string
+  /** Total number of months it repeats for. Absent means it repeats indefinitely. */
+  installments?: number
+}
+
 export interface MonthRecord {
   /** Always "YYYY-MM". The display label is derived from this, never stored. */
   id: string
@@ -46,6 +59,7 @@ export interface Wallet {
   id: string
   name: string
   months: MonthRecord[]
+  recurringExpenses: RecurringExpense[]
 }
 
 export interface MultiWalletStore {
