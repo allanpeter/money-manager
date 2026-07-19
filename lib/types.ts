@@ -69,6 +69,10 @@ export interface MonthRecord {
 export interface Wallet {
   id: string
   name: string
+  /** Accent color (hex) for at-a-glance distinction between PF/PJ/family wallets. */
+  color?: string
+  /** Optional emoji shown before the wallet name. */
+  emoji?: string
   months: MonthRecord[]
   recurringExpenses: RecurringExpense[]
   recurringIncomes: RecurringIncome[]

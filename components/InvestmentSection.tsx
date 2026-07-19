@@ -86,7 +86,7 @@ export function InvestmentSection({ buckets, remainder, totalPct, onChange }: Re
           const missing = Math.max(0, target - saved)
           let eta = ""
           if (hasGoal) {
-            if (missing <= 0) eta = "Meta atingida 🎉"
+            if (missing <= 0) eta = "Meta atingida"
             else if (value > 0) eta = `faltam ~${Math.ceil(missing / value)} meses`
             else eta = "defina um aporte mensal"
           }

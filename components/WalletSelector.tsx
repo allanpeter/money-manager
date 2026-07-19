@@ -78,7 +78,7 @@ export function WalletSelector({ wallets, activeWalletId, onSwitch, onCreate, on
                 />
               ) : (
                 <button
-                  className={`text-sm rounded-xl px-3 py-1.5 transition-all ${
+                  className={`flex items-center gap-1.5 text-sm rounded-xl px-3 py-1.5 transition-all ${
                     isActive
                       ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
                       : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
@@ -86,6 +86,14 @@ export function WalletSelector({ wallets, activeWalletId, onSwitch, onCreate, on
                   onClick={() => (isActive ? startRename(wallet.id, wallet.name) : onSwitch(wallet.id))}
                   onDoubleClick={() => startRename(wallet.id, wallet.name)}
                 >
+                  {wallet.emoji ? (
+                    <span className="text-xs leading-none">{wallet.emoji}</span>
+                  ) : (
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: wallet.color ?? "#71717a" }}
+                    />
+                  )}
                   {wallet.name}
                 </button>
               )}

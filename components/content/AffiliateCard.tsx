@@ -29,7 +29,7 @@ export function AffiliateCard({ slot, intro }: Readonly<Props>) {
         <ArrowRight className="w-4 h-4" />
       </a>
       <p className="text-zinc-600 text-xs mt-3">
-        🔗 Link de parceiro{affiliate.partner ? ` (${affiliate.partner})` : ""}. Podemos receber uma
+        Link de parceiro{affiliate.partner ? ` (${affiliate.partner})` : ""}. Podemos receber uma
         comissão, sem custo adicional para você. Conteúdo educacional, não é recomendação de
         investimento.
       </p>

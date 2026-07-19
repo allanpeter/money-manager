@@ -56,8 +56,8 @@ export function ExpensesSection({ categories, total, onChange }: Readonly<Props>
             <ShoppingCart className="w-5 h-5 text-red-400" />
           </div>
           <div>
-            <h2 className="text-white font-semibold text-lg">Gastos</h2>
-            <p className="text-zinc-500 text-sm">Categorias de despesa mensal</p>
+            <h2 className="text-white font-semibold text-lg">Gastos avulsos</h2>
+            <p className="text-zinc-500 text-sm">Só neste mês (para fixos, use Gastos Fixos)</p>
           </div>
         </div>
         <div className="text-right">

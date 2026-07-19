@@ -35,8 +35,8 @@ export function IncomeSection({ sources, total, onChange }: Readonly<Props>) {
             <TrendingUp className="w-5 h-5 text-emerald-400" />
           </div>
           <div>
-            <h2 className="text-white font-semibold text-lg">Entradas</h2>
-            <p className="text-zinc-500 text-sm">Fontes de renda mensal</p>
+            <h2 className="text-white font-semibold text-lg">Entradas avulsas</h2>
+            <p className="text-zinc-500 text-sm">Só neste mês (para fixas, use Entradas Fixas)</p>
           </div>
         </div>
         <div className="text-right">

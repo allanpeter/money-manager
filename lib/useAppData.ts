@@ -5,11 +5,10 @@ import {
   MonthRecord, Wallet, MultiWalletStore, ALL_WALLETS,
 } from "./types"
 import { DEFAULT_DATA } from "./defaults"
-import { uid, DEFAULT_CURRENCY, DEFAULT_LOCALE } from "./utils"
+import { uid, DEFAULT_CURRENCY, DEFAULT_LOCALE, COLORS } from "./utils"
 import { currentMonthId, isMonthId, monthLabel, shiftMonth, monthWindow, monthRange } from "./months"
+import { StorageAdapter, localStorageAdapter } from "./storage"
 
-const LEGACY_KEY = "money-manager-data"
-const STORE_KEY  = "money-manager-store"
 const SCHEMA_VERSION = 4
 const FORECAST_MONTHS = 12
 
@@ -64,7 +63,7 @@ function freshStore(): MultiWalletStore {
   const walletId = uid()
   return {
     schemaVersion: SCHEMA_VERSION,
-    wallets: [{ id: walletId, name: "Pessoal", months: [{ id, data: clone(DEFAULT_DATA) }], recurringExpenses: [], recurringIncomes: [] }],
+    wallets: [{ id: walletId, name: "Pessoal", color: COLORS[0], months: [{ id, data: clone(DEFAULT_DATA) }], recurringExpenses: [], recurringIncomes: [] }],
     activeWalletId: walletId,
     activeMonthId: id,
     currency: DEFAULT_CURRENCY,
@@ -84,9 +83,11 @@ function migrate(raw: unknown): MultiWalletStore {
 
   // Already v2+-shaped: just normalize month data and validate ids.
   if (Array.isArray(obj.wallets)) {
-    const wallets: Wallet[] = obj.wallets.map(w => ({
+    const wallets: Wallet[] = obj.wallets.map((w, i) => ({
       id: w.id ?? uid(),
       name: w.name ?? "Carteira",
+      color: w.color ?? COLORS[i % COLORS.length],
+      emoji: w.emoji,
       months: (w.months ?? [])
         .filter(m => isMonthId(m.id))
         .map(m => ({ id: m.id, data: cleanData(m.data) })),
@@ -166,6 +167,36 @@ function recurringIncomeForWallet(wallet: Wallet, monthId: string): RecurringInc
   return wallet.recurringIncomes.filter(r => isRecurringActive(r, monthId))
 }
 
+export interface ForecastMonth {
+  id: string
+  label: string
+  income: number
+  fixed: number
+  manual: number
+  total: number
+  saldo: number
+}
+
+/** 12-month projection (recurring + already-entered manual) for a given set of wallets. */
+function buildForecast(wallets: Wallet[], locale?: string): ForecastMonth[] {
+  return monthRange(currentMonthId(), FORECAST_MONTHS).map(id => {
+    let fixed = 0
+    let manual = 0
+    let income = 0
+    for (const w of wallets) {
+      fixed += recurringForWallet(w, id).reduce((s, r) => s + r.amount, 0)
+      income += recurringIncomeForWallet(w, id).reduce((s, r) => s + r.amount, 0)
+      const md = w.months.find(m => m.id === id)
+      if (md) {
+        manual += md.data.expenseCategories.reduce((s, c) => s + c.amount, 0)
+        income += md.data.incomeSources.reduce((s, i) => s + i.amount, 0)
+      }
+    }
+    const total = fixed + manual
+    return { id, label: monthLabel(id, locale), fixed, manual, total, income, saldo: income - total }
+  })
+}
+
 /** Consolidated data across all wallets for a month. Ids are wallet-prefixed to stay unique. */
 function aggregateData(wallets: Wallet[], monthId: string): AppData {
   const result: AppData = { incomeSources: [], expenseCategories: [], investmentBuckets: [] }
@@ -179,41 +210,42 @@ function aggregateData(wallets: Wallet[], monthId: string): AppData {
   return result
 }
 
-export function useAppData() {
+export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
   const [store, setStore] = useState<MultiWalletStore | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [windowCenter, setWindowCenter] = useState(currentMonthId)
 
   useEffect(() => {
-    let next: MultiWalletStore
-    try {
-      const saved = localStorage.getItem(STORE_KEY)
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        next = parsed?.schemaVersion === SCHEMA_VERSION ? parsed : migrate(parsed)
-        if (next !== parsed) localStorage.setItem(STORE_KEY, JSON.stringify(next))
+    let cancelled = false
+    adapter.load().then(raw => {
+      if (cancelled) return
+      let next: MultiWalletStore
+      let dirty = false
+      if (raw && (raw as Partial<MultiWalletStore>).schemaVersion === SCHEMA_VERSION) {
+        next = raw as MultiWalletStore
+      } else if (raw) {
+        next = migrate(raw)
+        dirty = true
       } else {
-        const legacy = localStorage.getItem(LEGACY_KEY)
-        if (legacy) {
-          next = migrate({ months: [{ id: currentMonthId(), data: JSON.parse(legacy) }] })
-          localStorage.setItem(STORE_KEY, JSON.stringify(next))
-        } else {
-          next = freshStore()
-          localStorage.setItem(STORE_KEY, JSON.stringify(next))
-        }
+        next = freshStore()
+        dirty = true
       }
-    } catch {
-      next = freshStore()
-    }
-    setStore(next)
-    setWindowCenter(next.activeMonthId)
-    setLoaded(true)
-  }, [])
+      setStore(next)
+      setWindowCenter(next.activeMonthId)
+      setLoaded(true)
+      if (dirty) adapter.save(next)
+    }).catch(() => {
+      if (cancelled) return
+      setStore(freshStore())
+      setLoaded(true)
+    })
+    return () => { cancelled = true }
+  }, [adapter])
 
   const saveStore = useCallback((next: MultiWalletStore) => {
     setStore(next)
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(next)) } catch {}
-  }, [])
+    adapter.save(next)
+  }, [adapter])
 
   const isConsolidated = store?.activeWalletId === ALL_WALLETS
   const activeWallet = store?.wallets.find(w => w.id === store.activeWalletId)
@@ -286,22 +318,18 @@ export function useAppData() {
       store.activeWalletId === ALL_WALLETS
         ? store.wallets
         : store.wallets.filter(w => w.id === store.activeWalletId)
-    return monthRange(currentMonthId(), FORECAST_MONTHS).map(id => {
-      let fixed = 0
-      let manual = 0
-      let income = 0
-      for (const w of relevantWallets) {
-        fixed += recurringForWallet(w, id).reduce((s, r) => s + r.amount, 0)
-        income += recurringIncomeForWallet(w, id).reduce((s, r) => s + r.amount, 0)
-        const md = w.months.find(m => m.id === id)
-        if (md) {
-          manual += md.data.expenseCategories.reduce((s, c) => s + c.amount, 0)
-          income += md.data.incomeSources.reduce((s, i) => s + i.amount, 0)
-        }
-      }
-      const total = fixed + manual
-      return { id, label: monthLabel(id, store.locale), fixed, manual, total, income, saldo: income - total }
-    })
+    return buildForecast(relevantWallets, store.locale)
+  }, [store])
+
+  /** Same 12-month projection, but computed independently for each wallet. */
+  const forecastByWallet = useMemo(() => {
+    if (!store) return []
+    return store.wallets.map(w => ({
+      id: w.id,
+      name: w.name,
+      color: w.color,
+      months: buildForecast([w], store.locale),
+    }))
   }, [store])
 
   function patchActive(next: AppData) {
@@ -345,6 +373,64 @@ export function useAppData() {
     })
   }
 
+  /** Applies `mutate` to a wallet's month data, seeding the month (like getMonthData) if absent. */
+  function withMonthData(w: Wallet, monthId: string, mutate: (d: AppData) => AppData): Wallet {
+    const nextData = mutate(getMonthData(w, monthId))
+    const exists = w.months.some(m => m.id === monthId)
+    const months = exists
+      ? w.months.map(m => (m.id === monthId ? { id: monthId, data: nextData } : m))
+      : [...w.months, { id: monthId, data: nextData }]
+    return { ...w, months }
+  }
+
+  /** Adds an avulsa (this-month-only) income to a specific wallet, without changing the active wallet. */
+  function addIncomeTo(walletId: string, monthId: string, source: IncomeSource) {
+    if (!store) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w =>
+        w.id === walletId
+          ? withMonthData(w, monthId, d => ({ ...d, incomeSources: [...d.incomeSources, source] }))
+          : w,
+      ),
+    })
+  }
+
+  /** Adds an avulsa (this-month-only) expense to a specific wallet, without changing the active wallet. */
+  function addExpenseTo(walletId: string, monthId: string, category: ExpenseCategory) {
+    if (!store) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w =>
+        w.id === walletId
+          ? withMonthData(w, monthId, d => ({ ...d, expenseCategories: [...d.expenseCategories, category] }))
+          : w,
+      ),
+    })
+  }
+
+  /** Adds a recurring (repeats-every-month) income to a specific wallet. */
+  function addRecurringIncomeTo(walletId: string, item: RecurringIncome) {
+    if (!store) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w =>
+        w.id === walletId ? { ...w, recurringIncomes: [...w.recurringIncomes, item] } : w,
+      ),
+    })
+  }
+
+  /** Adds a recurring (repeats-every-month) expense to a specific wallet. */
+  function addRecurringExpenseTo(walletId: string, item: RecurringExpense) {
+    if (!store) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w =>
+        w.id === walletId ? { ...w, recurringExpenses: [...w.recurringExpenses, item] } : w,
+      ),
+    })
+  }
+
   function switchMonth(id: string) {
     if (!store) return
     saveStore({ ...store, activeMonthId: id })
@@ -362,7 +448,10 @@ export function useAppData() {
   function createWallet(name: string) {
     if (!store) return
     const id = uid()
-    const wallet: Wallet = { id, name, months: [], recurringExpenses: [], recurringIncomes: [] }
+    const wallet: Wallet = {
+      id, name, color: COLORS[store.wallets.length % COLORS.length],
+      months: [], recurringExpenses: [], recurringIncomes: [],
+    }
     saveStore({ ...store, wallets: [...store.wallets, wallet], activeWalletId: id })
   }
 
@@ -412,6 +501,11 @@ export function useAppData() {
     updateIncome,
     updateExpenses,
     updateBuckets,
+    // wallet-targeted quick-add (used by the "Adicionar" modal)
+    addIncomeTo,
+    addExpenseTo,
+    addRecurringIncomeTo,
+    addRecurringExpenseTo,
     // recurring income
     recurringIncomes: activeWallet?.recurringIncomes ?? [],
     activeRecurringIncomes,
@@ -421,6 +515,7 @@ export function useAppData() {
     activeRecurringExpenses,
     updateRecurringExpenses,
     forecast,
+    forecastByWallet,
     // months
     windowMonths,
     activeMonthId: store?.activeMonthId ?? "",
