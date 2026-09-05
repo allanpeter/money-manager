@@ -25,4 +25,4 @@ COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY --from=build /app/lib ./lib
 COPY --from=build /app/scripts ./scripts
-CMD ["node", "server.js"]
+CMD ["node", "scripts/run-production.mjs"]

@@ -40,6 +40,7 @@ export function createDiscordChannel() {
   const allowedUsers = new Set((process.env.DISCORD_ALLOWED_USER_IDS ?? "").split(",").map(value => value.trim()).filter(Boolean))
   const commandChannelId = process.env.DISCORD_CHANNEL_ID?.trim() || null
   const reminderChannelId = process.env.DISCORD_REMINDER_CHANNEL_ID?.trim() || commandChannelId
+  const remindersEnabled = process.env.ASSISTANT_DISABLE_REMINDERS !== "true"
 
   const client = new Client({
     intents: [
@@ -142,6 +143,10 @@ export function createDiscordChannel() {
         void bootstrapExternalIdentity({ provider: "discord", externalUserId, conversationId: reminderChannelId, allowedIds: allowedUsers })
           .catch(error => console.error("discord bootstrap identity failed", error))
       }
+    }
+    if (!remindersEnabled) {
+      console.info("discord reminders disabled")
+      return
     }
     void checkReminders().catch(error => console.error("initial reminder check failed", error))
     const interval = Math.max(Number(process.env.REMINDER_POLL_INTERVAL_MS) || 900_000, 60_000)

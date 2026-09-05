@@ -16,6 +16,7 @@ services:
 
   app:
     <<: *runtime-image
+    command: node server.js
     environment:
       <<: *database-environment
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}

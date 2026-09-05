@@ -134,6 +134,25 @@ O chat da própria interface não depende do worker `assistant`; ele funciona co
 o serviço `app` e recebe `OPENAI_API_KEY` pelo Compose. O worker é necessário
 para Discord, Telegram e lembretes periódicos.
 
+### Coolify (um único serviço)
+
+Ao usar o `Dockerfile` diretamente no Coolify, o mesmo container inicia a
+interface web e, se `DISCORD_BOT_TOKEN` ou `TELEGRAM_BOT_TOKEN` estiver
+configurado, o worker dos bots e lembretes. Não exponha outra porta: somente a
+porta `3000` da interface é necessária.
+
+Além de `DATABASE_URL`, `DATABASE_SSL`, `AUTH_COOKIE_SECURE=true` e das
+variáveis da OpenAI, configure as variáveis do Discord. O log deve conter
+`discord assistant ready as ...`. O Compose mantém serviços separados para
+facilitar desenvolvimento e operação local.
+
+Para validar a conexão local do bot sem enviar lembretes, execute:
+
+```bash
+ASSISTANT_DISABLE_REMINDERS=true DISCORD_ALLOWED_USER_IDS= \
+  node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/assistant.ts
+```
+
 Logs operacionais:
 
 ```bash
