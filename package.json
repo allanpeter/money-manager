@@ -4,25 +4,44 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "tsx --test lib/accounts/*.test.ts lib/assistant/*.test.ts lib/dashboard-assistant/*.test.ts lib/auth/*.test.ts lib/reminders/*.test.ts",
+    "assistant": "tsx scripts/assistant.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:backup": "sh scripts/backup.sh"
   },
   "dependencies": {
+    "discord.js": "^14.27.0",
+    "drizzle-orm": "^0.45.2",
+    "exceljs": "^4.4.0",
     "lucide-react": "^1.11.0",
-    "next": "16.2.4",
+    "next": "^16.3.3",
+    "openai": "^7.5.0",
+    "pg": "^8.22.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "recharts": "^3.8.1"
+    "recharts": "^3.10.1",
+    "tsx": "^4.23.12"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.20.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "^16.3.3",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

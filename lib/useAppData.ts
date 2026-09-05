@@ -215,7 +215,7 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
   const [loaded, setLoaded] = useState(false)
   const [windowCenter, setWindowCenter] = useState(currentMonthId)
 
-  useEffect(() => {
+  const loadStore = useCallback(() => {
     let cancelled = false
     adapter.load().then(raw => {
       if (cancelled) return
@@ -233,7 +233,7 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
       setStore(next)
       setWindowCenter(next.activeMonthId)
       setLoaded(true)
-      if (dirty) adapter.save(next)
+      if (dirty) void adapter.save(next)
     }).catch(() => {
       if (cancelled) return
       setStore(freshStore())
@@ -242,9 +242,19 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
     return () => { cancelled = true }
   }, [adapter])
 
+  useEffect(() => {
+    return loadStore()
+  }, [loadStore])
+
+  useEffect(() => {
+    const reload = () => { loadStore() }
+    window.addEventListener("financial-store-updated", reload)
+    return () => window.removeEventListener("financial-store-updated", reload)
+  }, [loadStore])
+
   const saveStore = useCallback((next: MultiWalletStore) => {
     setStore(next)
-    adapter.save(next)
+    void adapter.save(next)
   }, [adapter])
 
   const isConsolidated = store?.activeWalletId === ALL_WALLETS

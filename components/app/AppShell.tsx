@@ -2,7 +2,8 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Plus, LayoutDashboard, ListPlus } from "lucide-react"
+import { Bot, LogOut, Plus, LayoutDashboard, ListPlus, Settings } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { AppDataProvider, useApp } from "./AppDataProvider"
 import { WalletSelector } from "@/components/WalletSelector"
 import { MonthSelector } from "@/components/MonthSelector"
@@ -11,12 +12,21 @@ import { AddEntryModal } from "./AddEntryModal"
 const TABS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/lancamentos", label: "Lançamentos", icon: ListPlus },
+  { href: "/assistente", label: "Assistente IA", icon: Bot },
+  { href: "/configuracoes", label: "Configurações", icon: Settings },
 ]
 
-function ShellInner({ children }: Readonly<{ children: React.ReactNode }>) {
+function ShellInner({ children, userName, workspaceName }: Readonly<{ children: React.ReactNode; userName: string; workspaceName: string }>) {
   const app = useApp()
   const pathname = usePathname()
+  const router = useRouter()
   const [adding, setAdding] = useState(false)
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" })
+    router.push("/login")
+    router.refresh()
+  }
 
   if (!app.loaded) {
     return (
@@ -33,6 +43,10 @@ function ShellInner({ children }: Readonly<{ children: React.ReactNode }>) {
           <div>
             <h1 className="text-3xl font-bold text-white tracking-tight">Gestor Financeiro</h1>
             <p className="text-zinc-500 mt-1">Controle seus gastos e distribua o que sobra de forma inteligente</p>
+          </div>
+          <div className="flex items-center gap-3 text-right">
+            <div className="hidden sm:block"><p className="text-sm text-zinc-200">{userName}</p><p className="text-xs text-zinc-500">{workspaceName}</p></div>
+            <button type="button" onClick={logout} title="Sair" className="rounded-xl border border-zinc-800 p-2 text-zinc-400 hover:text-white"><LogOut className="h-4 w-4" /></button>
           </div>
         </div>
 
@@ -91,10 +105,10 @@ function ShellInner({ children }: Readonly<{ children: React.ReactNode }>) {
   )
 }
 
-export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
+export function AppShell({ children, userName, workspaceName }: Readonly<{ children: React.ReactNode; userName: string; workspaceName: string }>) {
   return (
     <AppDataProvider>
-      <ShellInner>{children}</ShellInner>
+      <ShellInner userName={userName} workspaceName={workspaceName}>{children}</ShellInner>
     </AppDataProvider>
   )
 }

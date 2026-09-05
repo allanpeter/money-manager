@@ -40,3 +40,36 @@ export const localStorageAdapter: StorageAdapter = {
     } catch {}
   },
 }
+
+/** Fonte principal autenticada. O localStorage é usado apenas para migrar dados
+ * já existentes no navegador ou como contingência temporária se a rede cair. */
+export const databaseStorageAdapter: StorageAdapter = {
+  async load() {
+    if (typeof window === "undefined") return null
+    try {
+      const response = await fetch("/api/financial-store", { cache: "no-store" })
+      if (!response.ok) throw new Error("Falha ao carregar dados financeiros.")
+      const result = await response.json() as { data?: unknown }
+      if (result.data) return result.data
+
+      const legacy = await localStorageAdapter.load()
+      if (legacy) await this.save(legacy as MultiWalletStore)
+      return legacy
+    } catch {
+      return localStorageAdapter.load()
+    }
+  },
+  async save(store) {
+    if (typeof window === "undefined") return
+    try {
+      const response = await fetch("/api/financial-store", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: store }),
+      })
+      if (!response.ok) throw new Error("Falha ao salvar dados financeiros.")
+    } catch {
+      await localStorageAdapter.save(store)
+    }
+  },
+}

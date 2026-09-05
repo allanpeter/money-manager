@@ -1,0 +1,74 @@
+import { and, desc, eq } from "drizzle-orm"
+import { withWorkspace } from "@/lib/db"
+import { assistantCommands } from "@/lib/db/schema"
+import { getAuthContext } from "@/lib/auth/session"
+import { WebAssistantChat, type WebChatMessage } from "@/components/app/WebAssistantChat"
+
+export const dynamic = "force-dynamic"
+
+const statusLabel = {
+  received: "Recebido",
+  pending: "Aguardando",
+  confirmed: "Confirmado",
+  executed: "Executado",
+  rejected: "Cancelado",
+  failed: "Falhou",
+}
+
+export default async function AssistantPage() {
+  const auth = await getAuthContext()
+  if (!auth) return null
+  const commands = await withWorkspace(auth.workspaceId, database => database.select().from(assistantCommands)
+    .where(and(
+      eq(assistantCommands.workspaceId, auth.workspaceId),
+      eq(assistantCommands.userId, auth.userId),
+    )).orderBy(desc(assistantCommands.createdAt)).limit(50))
+
+  const chatMessages = commands
+    .filter(command => command.channel === "web")
+    .toReversed()
+    .flatMap<WebChatMessage>(command => {
+      const result = command.result as { message?: string } | null
+      const messages: WebChatMessage[] = [{
+        id: `${command.id}:user`,
+        author: "user",
+        text: command.rawText,
+      }]
+      if (result?.message) messages.push({
+        id: `${command.id}:assistant`,
+        author: "assistant",
+        text: result.message,
+        status: command.status === "received" || command.status === "confirmed" ? "pending" : command.status,
+      })
+      return messages
+    })
+
+  return (
+    <section className="space-y-4">
+      <header className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+        <h2 className="text-lg font-semibold text-white">Assistente financeiro</h2>
+        <p className="mt-1 text-sm text-zinc-500">Registre lançamentos, recorrências e carteiras por linguagem natural. Escritas exigem confirmação e ficam registradas.</p>
+      </header>
+      <WebAssistantChat initialMessages={chatMessages} />
+      <div>
+        <h3 className="text-sm font-medium text-zinc-300">Auditoria de todos os canais</h3>
+        <p className="mt-1 text-xs text-zinc-600">Últimos comandos deste usuário no Web, Discord e Telegram.</p>
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+        {commands.length ? commands.map(command => {
+          const result = command.result as { message?: string } | null
+          return (
+            <article key={command.id} className="border-b border-zinc-800 p-4 last:border-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-medium uppercase tracking-wide text-cyan-300">{statusLabel[command.status]}</span>
+                <time className="text-xs text-zinc-600">{command.createdAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</time>
+              </div>
+              <p className="mt-2 text-sm text-zinc-200">{command.rawText}</p>
+              {result?.message && <p className="mt-1 whitespace-pre-line text-xs text-zinc-500">{result.message}</p>}
+            </article>
+          )
+        }) : <p className="p-8 text-center text-sm text-zinc-500">Nenhum comando recebido ainda.</p>}
+      </div>
+    </section>
+  )
+}
