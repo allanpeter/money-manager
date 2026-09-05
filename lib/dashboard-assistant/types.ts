@@ -18,6 +18,7 @@ export interface DashboardAction {
   itemName: string | null
   amountCents: number | null
   monthId: string | null
+  endMonthId: string | null
   expenseType: ExpenseType | null
   paymentMethod: PaymentMethod | null
   installments: number | null
@@ -62,6 +63,7 @@ export const EMPTY_DASHBOARD_ACTION: DashboardAction = {
   itemName: null,
   amountCents: null,
   monthId: null,
+  endMonthId: null,
   expenseType: null,
   paymentMethod: null,
   installments: null,

@@ -55,6 +55,12 @@ function monthOrCurrent(value: string | null) {
   return value && isMonthId(value) ? value : currentMonthId()
 }
 
+function monthsInclusive(start: string, end: string) {
+  const [startYear, startMonth] = start.split("-").map(Number)
+  const [endYear, endMonth] = end.split("-").map(Number)
+  return (endYear - startYear) * 12 + endMonth - startMonth + 1
+}
+
 export function prepareDashboardAction(context: DashboardAssistantContext, rawAction: DashboardAction): PreparedDashboardAction {
   const action = { ...rawAction }
 
@@ -90,6 +96,12 @@ export function prepareDashboardAction(context: DashboardAssistantContext, rawAc
   action.walletId = wallet.id
   action.walletName = wallet.name
   action.monthId = monthOrCurrent(action.monthId)
+  if ((action.kind === "add_recurring_income" || action.kind === "add_recurring_expense") && action.endMonthId) {
+    if (!isMonthId(action.endMonthId) || action.endMonthId < action.monthId) {
+      return { action, ready: false, readOnly: false, summary: null, prompt: "Informe um mês final válido, posterior ao início da recorrência." }
+    }
+    action.installments = monthsInclusive(action.monthId, action.endMonthId)
+  }
   if ((action.kind === "add_recurring_income" || action.kind === "add_recurring_expense") && !validInstallments(action.installments)) {
     return { action, ready: false, readOnly: false, summary: null, prompt: "Em quantos meses deve se repetir? Diga um número ou “sem prazo”." }
   }
@@ -110,7 +122,12 @@ export function prepareDashboardAction(context: DashboardAssistantContext, rawAc
 
 export function prepareDashboardActions(context: DashboardAssistantContext, rawActions: DashboardAction[]): PreparedDashboardActions {
   if (!rawActions.length) return { actions: [], ready: false, readOnly: true, summary: null, prompt: "Não identifiquei uma operação financeira." }
-  const prepared = rawActions.map(action => prepareDashboardAction(context, action))
+  const sharedEndMonthId = rawActions.find(action => action.endMonthId)?.endMonthId ?? null
+  const prepared = rawActions.map(action => prepareDashboardAction(context, (
+    sharedEndMonthId && (action.kind === "add_recurring_income" || action.kind === "add_recurring_expense") && !action.endMonthId
+      ? { ...action, endMonthId: sharedEndMonthId }
+      : action
+  )))
   const incomplete = prepared.find(item => !item.ready)
   if (incomplete) {
     const allNeedWallet = prepared.every(item => !item.ready && item.prompt.includes("Em qual carteira"))
