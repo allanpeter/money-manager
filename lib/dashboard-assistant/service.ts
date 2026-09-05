@@ -2,21 +2,32 @@ import { and, eq } from "drizzle-orm"
 import { currentMonthId } from "@/lib/months"
 import { withWorkspace } from "@/lib/db"
 import { assistantCommands, assistantSessions } from "@/lib/db/schema"
-import { prepareDashboardAction } from "./actions"
-import { interpretDashboardMessage, isCancellation, isConfirmation, mergeDashboardAction } from "./interpreter"
-import { executeFinancialAssistantAction, getFinancialAssistantContext } from "@/lib/financial-api/assistant-gateway"
-import type { DashboardAssistantInput, DashboardAssistantResult, PendingDashboardAction } from "./types"
+import { prepareDashboardActions } from "./actions"
+import { interpretDashboardMessage, isCancellation, isConfirmation, mergeDashboardActions } from "./interpreter"
+import { executeFinancialAssistantActions, getFinancialAssistantContext } from "@/lib/financial-api/assistant-gateway"
+import type { DashboardAction, DashboardAssistantInput, DashboardAssistantResult, PendingDashboardAction } from "./types"
 
 const dashboardKinds = new Set(["chat", "create_wallet", "add_income", "add_expense", "add_recurring_income", "add_recurring_expense", "query_summary", "list_wallets", "unknown"])
 
 function asDashboardPending(value: unknown): PendingDashboardAction | null {
   if (!value || typeof value !== "object") return null
   const pending = value as Partial<PendingDashboardAction>
-  if ((pending.stage !== "collecting" && pending.stage !== "ready") || !pending.action || typeof pending.action !== "object") return null
-  const action = pending.action as { kind?: unknown }
-  return typeof action.kind === "string" && dashboardKinds.has(action.kind) && typeof pending.operationId === "string"
-    ? pending as PendingDashboardAction
-    : null
+  if ((pending.stage !== "collecting" && pending.stage !== "ready") || typeof pending.operationId !== "string") return null
+  const legacyAction = (pending as { action?: { kind?: unknown } }).action
+  const actions = Array.isArray(pending.actions) ? pending.actions : legacyAction ? [legacyAction] : []
+  if (!actions.length || !actions.every(action => action && typeof action === "object" && typeof action.kind === "string" && dashboardKinds.has(action.kind))) return null
+  return { stage: pending.stage, actions: actions as DashboardAction[], operationId: pending.operationId }
+}
+
+function completedMessage(actions: DashboardAction[], fallback: string) {
+  if (actions.length === 1) return fallback
+  return `Pronto: ${actions.map(action => action.itemName).filter(Boolean).join(", ")} foram registrados na carteira ${actions[0].walletName}.`
+}
+
+function walletChosenForPending(text: string, actions: DashboardAction[], wallets: Array<{ id: string; name: string }>) {
+  if (!actions.length || actions.some(action => action.walletName)) return null
+  const normalizedText = text.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  return wallets.find(wallet => normalizedText.includes(wallet.name.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) ?? null
 }
 
 async function getSession(input: DashboardAssistantInput) {
@@ -72,42 +83,45 @@ export async function handleDashboardAssistantMessage(input: DashboardAssistantI
     if (pending && isCancellation(text)) {
       const result = { message: "Operação cancelada." }
       await savePending(input, null)
-      await updateCommand(input.workspaceId, command.id, { status: "rejected", interpretedAction: pending.action, result })
+      await updateCommand(input.workspaceId, command.id, { status: "rejected", interpretedAction: pending.actions, result })
       return { ...result, status: "rejected" }
     }
     if (pending?.stage === "ready" && isConfirmation(text)) {
       if (input.role === "viewer") {
         const result = { message: "Seu acesso é somente leitura; essa operação não foi executada." }
         await savePending(input, null)
-        await updateCommand(input.workspaceId, command.id, { status: "rejected", interpretedAction: pending.action, result })
+        await updateCommand(input.workspaceId, command.id, { status: "rejected", interpretedAction: pending.actions, result })
         return { ...result, status: "rejected" }
       }
-      const executed = await executeFinancialAssistantAction(input.workspaceId, pending.action)
-      const result = { message: executed.message, storeUpdated: executed.changed }
+      const executed = await executeFinancialAssistantActions(input.workspaceId, pending.actions)
+      const result = { message: completedMessage(pending.actions, executed.message), storeUpdated: executed.changed }
       await savePending(input, null)
-      await updateCommand(input.workspaceId, command.id, { status: "executed", interpretedAction: pending.action, result })
+      await updateCommand(input.workspaceId, command.id, { status: "executed", interpretedAction: pending.actions, result })
       return { ...result, status: "executed" }
     }
 
     const context = await getFinancialAssistantContext(input.workspaceId)
-    const interpreted = await interpretDashboardMessage({ text, today: currentMonthId(), context, pending })
-    if (interpreted.action.kind === "chat") {
+    const selectedWallet = pending ? walletChosenForPending(text, pending.actions, context.wallets) : null
+    const interpreted = selectedWallet ? null : await interpretDashboardMessage({ text, today: currentMonthId(), context, pending })
+    if (interpreted?.actions.length === 1 && interpreted.actions[0].kind === "chat") {
       const result = { message: interpreted.reply.trim() || "Como posso ajudar com suas finanças?" }
-      await updateCommand(input.workspaceId, command.id, { status: "executed", interpretedAction: interpreted.action, result })
+      await updateCommand(input.workspaceId, command.id, { status: "executed", interpretedAction: interpreted.actions, result })
       return { ...result, status: "executed" }
     }
-    const action = mergeDashboardAction(pending?.action ?? null, interpreted.action)
-    if (action.kind === "unknown") {
-      const result = { message: interpreted.reply.trim() || "Posso criar uma carteira, registrar receitas ou despesas, criar recorrências e consultar o consolidado." }
+    const actions = selectedWallet
+      ? pending!.actions.map(action => ({ ...action, walletName: selectedWallet.name, walletId: selectedWallet.id }))
+      : mergeDashboardActions(pending?.actions ?? null, interpreted!.actions)
+    if (actions.some(action => action.kind === "unknown")) {
+      const result = { message: interpreted?.reply.trim() || "Posso criar uma carteira, registrar receitas ou despesas, criar recorrências e consultar o consolidado." }
       await savePending(input, null)
-      await updateCommand(input.workspaceId, command.id, { status: "executed", interpretedAction: action, result })
+      await updateCommand(input.workspaceId, command.id, { status: "executed", interpretedAction: actions, result })
       return { ...result, status: "executed" }
     }
-    const prepared = prepareDashboardAction(context, action)
-    await updateCommand(input.workspaceId, command.id, { interpretedAction: prepared.action })
+    const prepared = prepareDashboardActions(context, actions)
+    await updateCommand(input.workspaceId, command.id, { interpretedAction: prepared.actions })
     if (prepared.ready && prepared.readOnly) {
-      const executed = await executeFinancialAssistantAction(input.workspaceId, prepared.action)
-      const result = { message: executed.message }
+      const executed = await executeFinancialAssistantActions(input.workspaceId, prepared.actions)
+      const result = { message: completedMessage(prepared.actions, executed.message) }
       await savePending(input, null)
       await updateCommand(input.workspaceId, command.id, { status: "executed", result })
       return { ...result, status: "executed" }
@@ -116,15 +130,15 @@ export async function handleDashboardAssistantMessage(input: DashboardAssistantI
       if (input.role === "viewer") {
         const result = { message: "Seu acesso é somente leitura; você não pode confirmar alterações financeiras." }
         await savePending(input, null)
-        await updateCommand(input.workspaceId, command.id, { status: "rejected", interpretedAction: prepared.action, result })
+        await updateCommand(input.workspaceId, command.id, { status: "rejected", interpretedAction: prepared.actions, result })
         return { ...result, status: "rejected" }
       }
-      await savePending(input, { stage: "ready", action: prepared.action, operationId: pending?.operationId ?? command.id })
+      await savePending(input, { stage: "ready", actions: prepared.actions, operationId: pending?.operationId ?? command.id })
       const result = { message: `Confirma esta operação?\n${prepared.summary}\n\nResponda “sim” para salvar ou “cancelar”.` }
       await updateCommand(input.workspaceId, command.id, { status: "pending", result })
       return { ...result, status: "pending" }
     }
-    const nextPending: PendingDashboardAction = { stage: "collecting", action: prepared.action, operationId: pending?.operationId ?? command.id }
+    const nextPending: PendingDashboardAction = { stage: "collecting", actions: prepared.actions, operationId: pending?.operationId ?? command.id }
     await savePending(input, nextPending)
     const result = { message: prepared.prompt }
     await updateCommand(input.workspaceId, command.id, { status: "pending", result })

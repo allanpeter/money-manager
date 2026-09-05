@@ -17,10 +17,15 @@ const schema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    action: { type: "object", additionalProperties: false, properties: actionProperties, required: Object.keys(actionProperties) },
+    actions: {
+      type: "array",
+      minItems: 1,
+      maxItems: 10,
+      items: { type: "object", additionalProperties: false, properties: actionProperties, required: Object.keys(actionProperties) },
+    },
     reply: { type: "string" },
   },
-  required: ["action", "reply"],
+  required: ["actions", "reply"],
 } as const
 
 function instructions(today: string) {
@@ -28,13 +33,15 @@ function instructions(today: string) {
 Retorne apenas o JSON estruturado. A data atual é ${today}.
 Cada conversa está vinculada a um único usuário e workspace; use exclusivamente as carteiras fornecidas no contexto e nunca exponha IDs internos.
 Nunca invente carteira, valor, descrição ou mês. Valores monetários devem ser convertidos para centavos inteiros: R$ 12,34 = 1234.
+Retorne uma ação por lançamento independente. Se o usuário pedir aluguel e condomínio, retorne duas ações; nunca some valores, nunca junte descrições e nunca descarte um lançamento.
 Para conversas, saudações ou perguntas sem operação, use chat e responda de forma curta em reply.
 Use create_wallet para criar uma carteira como PF, PJ, esposa ou filhos.
 Use add_income e add_expense para lançamentos apenas do mês escolhido. Use add_recurring_income e add_recurring_expense quando o usuário disser mensal, recorrente, todo mês ou informar parcelas.
 Para uma compra no cartão use add_expense e paymentMethod credit. O sistema atual não controla fatura nem quitação de contas: registre a compra como despesa.
 Use query_summary para saldo, receitas ou despesas; se o usuário não citar carteira, a consulta é consolidada. Use list_wallets para listar as carteiras.
 Para lançamentos e criação, deixe reply vazio: o sistema fará perguntas e pedirá confirmação. Para consultas, deixe os campos não necessários nulos.
-walletId é reservado ao sistema e deve sempre ser null. Se o usuário não informar mês, deixe monthId null; o sistema aplicará o mês atual.
+walletId é reservado ao sistema e deve sempre ser null. Não preencha walletName se o usuário não citou explicitamente uma carteira, mesmo se existir apenas uma disponível. Se o usuário responder uma carteira para um lote pendente, repita essa carteira em cada ação do lote.
+Se o usuário não informar mês, deixe monthId null; o sistema aplicará o mês atual.
 Use unknown apenas para pedido financeiro não suportado, explicando brevemente em reply que você pode registrar receitas, despesas, recorrências, criar carteiras e mostrar resumos.`
 }
 
@@ -53,7 +60,7 @@ export async function interpretDashboardMessage(input: {
     instructions: instructions(input.today),
     input: JSON.stringify({
       mensagem: input.text,
-      acaoPendente: input.pending?.action ?? null,
+      acoesPendentes: input.pending?.actions ?? null,
       carteirasDisponiveis: input.context.wallets.map(wallet => wallet.name),
     }),
     text: {
@@ -65,11 +72,16 @@ export async function interpretDashboardMessage(input: {
   return JSON.parse(response.output_text) as DashboardInterpretation
 }
 
-export function mergeDashboardAction(previous: DashboardAction | null, next: DashboardAction): DashboardAction {
-  if (!previous || previous.kind === "unknown") return next
-  if (next.kind === "unknown") next = { ...next, kind: previous.kind }
+function mergeAction(previous: DashboardAction, next: DashboardAction): DashboardAction {
   if (previous.kind !== next.kind) return next
+  if (next.kind === "unknown") next = { ...next, kind: previous.kind }
   return Object.fromEntries(Object.entries(next).map(([key, value]) => [key, value ?? previous[key as keyof DashboardAction]])) as DashboardAction
+}
+
+export function mergeDashboardActions(previous: DashboardAction[] | null, next: DashboardAction[]): DashboardAction[] {
+  if (!previous?.length || previous.some(action => action.kind === "unknown")) return next
+  if (previous.length !== next.length) return next
+  return next.map((action, index) => mergeAction(previous[index], action))
 }
 
 const normalize = (value: string) => value.trim().toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "")

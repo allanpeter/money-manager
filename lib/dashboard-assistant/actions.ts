@@ -1,4 +1,4 @@
-import { currentMonthId, isMonthId } from "@/lib/months"
+import { currentMonthId, isMonthId, monthLabel, shiftMonth } from "@/lib/months"
 import type { MultiWalletStore } from "@/lib/types"
 import { COLORS, formatCurrency } from "@/lib/utils"
 import { newId, nextWalletColor, withMonthData } from "@/lib/financial-api/store"
@@ -12,6 +12,14 @@ export interface PreparedDashboardAction {
   summary: string | null
 }
 
+export interface PreparedDashboardActions {
+  actions: DashboardAction[]
+  ready: boolean
+  readOnly: boolean
+  prompt: string
+  summary: string | null
+}
+
 const normalize = (value: string) => value.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim()
 
 function resolveWallet(context: DashboardAssistantContext, action: DashboardAction) {
@@ -19,7 +27,7 @@ function resolveWallet(context: DashboardAssistantContext, action: DashboardActi
     const byId = context.wallets.find(wallet => wallet.id === action.walletId)
     if (byId) return byId
   }
-  if (!action.walletName) return context.wallets.length === 1 ? context.wallets[0] : null
+  if (!action.walletName) return null
   const requested = normalize(action.walletName)
   const exact = context.wallets.find(wallet => normalize(wallet.name) === requested)
   if (exact) return exact
@@ -27,8 +35,12 @@ function resolveWallet(context: DashboardAssistantContext, action: DashboardActi
   return matches.length === 1 ? matches[0] : null
 }
 
-function walletPrompt(context: DashboardAssistantContext) {
-  return `Em qual carteira? Disponíveis: ${context.wallets.map(wallet => wallet.name).join(", ")}.`
+function walletPrompt(context: DashboardAssistantContext, actions: DashboardAction[] = []) {
+  const items = actions.filter(action => action.itemName && validAmount(action.amountCents))
+  const details = items.length
+    ? `Você pediu:\n${items.map((action, index) => `${index + 1}. ${action.itemName!.trim()} — ${formatCurrency(action.amountCents! / 100)}${action.kind.includes("recurring") ? "/mês" : ""}`).join("\n")}\n\n`
+    : ""
+  return `${details}Em qual carteira devo registrar? Disponíveis: ${context.wallets.map(wallet => wallet.name).join(", ")}.`
 }
 
 function validAmount(value: number | null): value is number {
@@ -52,7 +64,7 @@ export function prepareDashboardAction(context: DashboardAssistantContext, rawAc
   if (action.kind === "query_summary") {
     action.monthId = monthOrCurrent(action.monthId)
     const wallet = resolveWallet(context, action)
-    if (action.walletName && !wallet) return { action, ready: false, readOnly: true, summary: null, prompt: walletPrompt(context) }
+  if (action.walletName && !wallet) return { action, ready: false, readOnly: true, summary: null, prompt: walletPrompt(context) }
     if (wallet) {
       action.walletId = wallet.id
       action.walletName = wallet.name
@@ -74,7 +86,7 @@ export function prepareDashboardAction(context: DashboardAssistantContext, rawAc
   if (!action.itemName?.trim()) return { action, ready: false, readOnly: false, summary: null, prompt: isIncome ? "Qual é a descrição da receita?" : "Qual é a descrição da despesa?" }
   if (!validAmount(action.amountCents)) return { action, ready: false, readOnly: false, summary: null, prompt: "Qual é o valor?" }
   const wallet = resolveWallet(context, action)
-  if (!wallet) return { action, ready: false, readOnly: false, summary: null, prompt: walletPrompt(context) }
+  if (!wallet) return { action, ready: false, readOnly: false, summary: null, prompt: walletPrompt(context, [action]) }
   action.walletId = wallet.id
   action.walletName = wallet.name
   action.monthId = monthOrCurrent(action.monthId)
@@ -83,7 +95,9 @@ export function prepareDashboardAction(context: DashboardAssistantContext, rawAc
   }
   if (isExpense && !action.expenseType) action.expenseType = action.kind === "add_recurring_expense" ? "fixed" : "variable"
   const recurring = action.kind === "add_recurring_income" || action.kind === "add_recurring_expense"
-  const recurrence = recurring ? action.installments ? ` por ${action.installments} meses` : " mensal, sem prazo" : ` em ${action.monthId}`
+  const recurrence = recurring
+    ? action.installments ? ` de ${monthLabel(action.monthId)} até ${monthLabel(shiftMonth(action.monthId, action.installments - 1))} (${action.installments} meses)` : " mensal, sem prazo"
+    : ` em ${monthLabel(action.monthId)}`
   const kind = isIncome ? "receita" : "despesa"
   return {
     action,
@@ -91,6 +105,41 @@ export function prepareDashboardAction(context: DashboardAssistantContext, rawAc
     readOnly: false,
     summary: `Registrar ${kind} “${action.itemName.trim()}” de ${formatCurrency(action.amountCents / 100)} em ${wallet.name}${recurrence}`,
     prompt: "",
+  }
+}
+
+export function prepareDashboardActions(context: DashboardAssistantContext, rawActions: DashboardAction[]): PreparedDashboardActions {
+  if (!rawActions.length) return { actions: [], ready: false, readOnly: true, summary: null, prompt: "Não identifiquei uma operação financeira." }
+  const prepared = rawActions.map(action => prepareDashboardAction(context, action))
+  const incomplete = prepared.find(item => !item.ready)
+  if (incomplete) {
+    const allNeedWallet = prepared.every(item => !item.ready && item.prompt.includes("Em qual carteira"))
+    return {
+      actions: prepared.map(item => item.action),
+      ready: false,
+      readOnly: prepared.every(item => item.readOnly),
+      summary: null,
+      prompt: allNeedWallet ? walletPrompt(context, prepared.map(item => item.action)) : incomplete.prompt,
+    }
+  }
+  const readOnly = prepared.every(item => item.readOnly)
+  if (prepared.some(item => item.readOnly) && !readOnly) {
+    return { actions: prepared.map(item => item.action), ready: false, readOnly: true, summary: null, prompt: "Envie consultas e alterações financeiras em mensagens separadas." }
+  }
+  if (readOnly && prepared.length > 1) {
+    return { actions: prepared.map(item => item.action), ready: false, readOnly: true, summary: null, prompt: "Faça uma consulta por vez." }
+  }
+  if (readOnly) return { actions: prepared.map(item => item.action), ready: true, readOnly: true, summary: null, prompt: "" }
+  const entries = prepared.map((item, index) => `${index + 1}. ${item.summary}`).join("\n")
+  const monthly = prepared
+    .filter(item => item.action.kind === "add_recurring_expense" || item.action.kind === "add_recurring_income")
+    .reduce((sum, item) => sum + (item.action.amountCents ?? 0), 0)
+  return {
+    actions: prepared.map(item => item.action),
+    ready: true,
+    readOnly: false,
+    prompt: "",
+    summary: `${prepared.length === 1 ? entries : `Registrar ${prepared.length} operações:\n${entries}`}${monthly ? `\n\nImpacto mensal: ${formatCurrency(monthly / 100)}` : ""}`,
   }
 }
 
@@ -106,10 +155,17 @@ function monthTotals(store: MultiWalletStore, walletId: string | null, monthId: 
   }, { income: 0, expenses: 0 })
 }
 
-function shiftMonth(id: string, delta: number) {
-  const [year, month] = id.split("-").map(Number)
-  const date = new Date(year, month - 1 + delta, 1)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+function summaryLines(store: MultiWalletStore, walletId: string | null, monthId: string) {
+  const wallets = walletId ? store.wallets.filter(wallet => wallet.id === walletId) : store.wallets
+  const recurring = wallets.flatMap(wallet => wallet.recurringExpenses
+    .filter(item => item.startMonth <= monthId && (!item.installments || monthId <= shiftMonth(item.startMonth, item.installments - 1)))
+    .map(item => `${item.name}: ${formatCurrency(item.amount)}`))
+  const variable = wallets.flatMap(wallet => wallet.months.find(month => month.id === monthId)?.data.expenseCategories ?? [])
+    .map(item => `${item.name}: ${formatCurrency(item.amount)}`)
+  const lines: string[] = []
+  if (recurring.length) lines.push(`Despesas recorrentes: ${recurring.join(", ")}.`)
+  if (variable.length) lines.push(`Lançamentos do mês: ${variable.join(", ")}.`)
+  return lines
 }
 
 export function executeDashboardAction(store: MultiWalletStore, action: DashboardAction) {
@@ -121,7 +177,12 @@ export function executeDashboardAction(store: MultiWalletStore, action: Dashboar
     const totals = monthTotals(store, action.walletId, monthId)
     const wallet = action.walletId ? store.wallets.find(item => item.id === action.walletId) : null
     const scope = wallet ? `da carteira ${wallet.name}` : "consolidado"
-    return { store, message: `Resumo ${scope} em ${monthId}: receitas ${formatCurrency(totals.income)}, despesas ${formatCurrency(totals.expenses)} e saldo ${formatCurrency(totals.income - totals.expenses)}.`, changed: false }
+    const details = summaryLines(store, action.walletId, monthId)
+    return {
+      store,
+      message: [`Resumo ${scope} em ${monthLabel(monthId)}:`, `Receitas: ${formatCurrency(totals.income)}`, `Despesas: ${formatCurrency(totals.expenses)}`, `Saldo projetado: ${formatCurrency(totals.income - totals.expenses)}`, ...details].join("\n"),
+      changed: false,
+    }
   }
   if (action.kind === "create_wallet" && action.walletName) {
     const id = newId()

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { executeDashboardAction, prepareDashboardAction } from "./actions"
+import { executeDashboardAction, prepareDashboardAction, prepareDashboardActions } from "./actions"
 import { createFinancialStore } from "@/lib/financial-api/store"
 import { EMPTY_DASHBOARD_ACTION } from "./types"
 
@@ -8,9 +8,8 @@ function context(store = createFinancialStore()) {
   return { wallets: store.wallets.map(wallet => ({ id: wallet.id, name: wallet.name })) }
 }
 
-test("pede carteira quando existem múltiplas carteiras", () => {
+test("sempre pede carteira quando ela não foi informada", () => {
   const store = createFinancialStore()
-  store.wallets.push({ id: "pj", name: "Pessoa Jurídica", months: [], recurringExpenses: [], recurringIncomes: [] })
   const prepared = prepareDashboardAction(context(store), {
     ...EMPTY_DASHBOARD_ACTION,
     kind: "add_expense",
@@ -19,6 +18,23 @@ test("pede carteira quando existem múltiplas carteiras", () => {
   })
   assert.equal(prepared.ready, false)
   assert.match(prepared.prompt, /Em qual carteira/)
+})
+
+test("mantém despesas independentes em um lote e exibe confirmação detalhada", () => {
+  const store = createFinancialStore()
+  const prepared = prepareDashboardActions(context(store), [
+    { ...EMPTY_DASHBOARD_ACTION, kind: "add_recurring_expense", walletName: "Pessoal", itemName: "Aluguel", amountCents: 370000, installments: 23 },
+    { ...EMPTY_DASHBOARD_ACTION, kind: "add_recurring_expense", walletName: "Pessoal", itemName: "Condomínio", amountCents: 30000, installments: 23 },
+  ])
+  assert.equal(prepared.ready, true)
+  assert.equal(prepared.actions.length, 2)
+  assert.match(prepared.summary ?? "", /Aluguel/)
+  assert.match(prepared.summary ?? "", /Condomínio/)
+  assert.match(prepared.summary ?? "", /R\$\s?4\.000,00/)
+
+  const result = prepared.actions.reduce((current, action) => executeDashboardAction(current.store, action), { store, message: "", changed: false })
+  assert.equal(result.store.wallets[0].recurringExpenses.length, 2)
+  assert.deepEqual(result.store.wallets[0].recurringExpenses.map(item => item.name), ["Aluguel", "Condomínio"])
 })
 
 test("prepara e registra despesa na carteira indicada", () => {

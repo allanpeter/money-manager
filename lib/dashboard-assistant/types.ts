@@ -24,13 +24,13 @@ export interface DashboardAction {
 }
 
 export interface DashboardInterpretation {
-  action: DashboardAction
+  actions: DashboardAction[]
   reply: string
 }
 
 export interface PendingDashboardAction {
   stage: "collecting" | "ready"
-  action: DashboardAction
+  actions: DashboardAction[]
   operationId: string
 }
 
