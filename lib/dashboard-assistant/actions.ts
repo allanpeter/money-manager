@@ -95,7 +95,13 @@ export function prepareDashboardAction(context: DashboardAssistantContext, rawAc
   if (!wallet) return { action, ready: false, readOnly: false, summary: null, prompt: walletPrompt(context, [action]) }
   action.walletId = wallet.id
   action.walletName = wallet.name
-  action.monthId = monthOrCurrent(action.monthId)
+  const currentMonth = currentMonthId()
+  const recurringWithEnd = action.kind === "add_recurring_income" || action.kind === "add_recurring_expense"
+  // Models occasionally put the final month in monthId for a phrase such as
+  // “até julho de 2028”. Without an explicit start, recurrence starts now.
+  action.monthId = recurringWithEnd && action.endMonthId && action.monthId === action.endMonthId && currentMonth < action.endMonthId
+    ? currentMonth
+    : monthOrCurrent(action.monthId)
   if ((action.kind === "add_recurring_income" || action.kind === "add_recurring_expense") && action.endMonthId) {
     if (!isMonthId(action.endMonthId) || action.endMonthId < action.monthId) {
       return { action, ready: false, readOnly: false, summary: null, prompt: "Informe um mês final válido, posterior ao início da recorrência." }

@@ -38,7 +38,7 @@ Retorne uma ação por lançamento independente. Se o usuário pedir aluguel e c
 Para conversas, saudações ou perguntas sem operação, use chat e responda de forma curta em reply.
 Use create_wallet para criar uma carteira como PF, PJ, esposa ou filhos.
 Use add_income e add_expense para lançamentos apenas do mês escolhido. Use add_recurring_income e add_recurring_expense quando o usuário disser mensal, recorrente, todo mês ou informar parcelas.
-Quando o usuário disser “até julho de 2028”, preencha endMonthId como “2028-07”. Para “no mesmo prazo”, copie o mesmo endMonthId para cada operação recorrente. Nunca calcule nem invente installments quando houver endMonthId: o backend calcula o período.
+Quando o usuário disser “até julho de 2028”, preencha endMonthId como “2028-07” e deixe monthId null, exceto se ele também informar explicitamente o mês de início. Para “no mesmo prazo”, copie o mesmo endMonthId para cada operação recorrente. Nunca calcule nem invente installments quando houver endMonthId: o backend calcula o período.
 Para uma compra no cartão use add_expense e paymentMethod credit. O sistema atual não controla fatura nem quitação de contas: registre a compra como despesa.
 Use query_summary para saldo, receitas ou despesas; se o usuário não citar carteira, a consulta é consolidada. Use list_wallets para listar as carteiras.
 Para lançamentos e criação, deixe reply vazio: o sistema fará perguntas e pedirá confirmação. Para consultas, deixe os campos não necessários nulos.

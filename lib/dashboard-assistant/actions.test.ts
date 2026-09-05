@@ -23,7 +23,7 @@ test("sempre pede carteira quando ela não foi informada", () => {
 test("mantém despesas independentes em um lote e exibe confirmação detalhada", () => {
   const store = createFinancialStore()
   const prepared = prepareDashboardActions(context(store), [
-    { ...EMPTY_DASHBOARD_ACTION, kind: "add_recurring_expense", walletName: "Pessoal", itemName: "Aluguel", amountCents: 370000, monthId: "2026-09", endMonthId: "2028-07" },
+    { ...EMPTY_DASHBOARD_ACTION, kind: "add_recurring_expense", walletName: "Pessoal", itemName: "Aluguel", amountCents: 370000, monthId: "2028-07", endMonthId: "2028-07" },
     { ...EMPTY_DASHBOARD_ACTION, kind: "add_recurring_expense", walletName: "Pessoal", itemName: "Condomínio", amountCents: 30000, monthId: "2026-09" },
   ])
   assert.equal(prepared.ready, true)
@@ -33,6 +33,7 @@ test("mantém despesas independentes em um lote e exibe confirmação detalhada"
   assert.match(prepared.summary ?? "", /R\$\s?4\.000,00/)
   assert.match(prepared.summary ?? "", /julho de 2028/)
   assert.deepEqual(prepared.actions.map(action => action.installments), [23, 23])
+  assert.deepEqual(prepared.actions.map(action => action.monthId), ["2026-09", "2026-09"])
 
   const result = prepared.actions.reduce((current, action) => executeDashboardAction(current.store, action), { store, message: "", changed: false })
   assert.equal(result.store.wallets[0].recurringExpenses.length, 2)
