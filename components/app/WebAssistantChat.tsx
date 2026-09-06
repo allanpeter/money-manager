@@ -115,7 +115,7 @@ export function WebAssistantChat({ initialMessages }: Readonly<{ initialMessages
                 event.currentTarget.form?.requestSubmit()
               }
             }}
-            placeholder="Ex.: registre R$ 50 de combustível na carteira Pessoal"
+            placeholder="Ex.: lance 3x de R$ 100 no Nubank, ou marque a fatura do Nubank como paga"
             rows={2}
             maxLength={4000}
             disabled={sending}

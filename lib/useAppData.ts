@@ -1,15 +1,17 @@
 "use client"
 import { useState, useEffect, useCallback, useMemo } from "react"
 import {
-  AppData, IncomeSource, ExpenseCategory, InvestmentBucket, RecurringExpense, RecurringIncome,
-  MonthRecord, Wallet, MultiWalletStore, ALL_WALLETS,
+  AppData, IncomeSource, ExpenseCategory, InvestmentBucket, RecurringExpense, RecurringIncome, CreditCard, CreditCardPurchase,
+  MonthRecord, Wallet, MultiWalletStore, ALL_WALLETS, RecurringExpensePayment,
 } from "./types"
 import { DEFAULT_DATA } from "./defaults"
 import { uid, DEFAULT_CURRENCY, DEFAULT_LOCALE, COLORS } from "./utils"
 import { currentMonthId, isMonthId, monthLabel, shiftMonth, monthWindow, monthRange } from "./months"
 import { StorageAdapter, localStorageAdapter } from "./storage"
+import { creditCardInvoicesForMonth, invoiceAsBill, invoiceBreakdown } from "./credit-cards"
+import { isRecurringActive } from "./bills"
 
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 7
 const FORECAST_MONTHS = 12
 
 const PT_MONTHS = [
@@ -51,6 +53,7 @@ function cleanData(d: Partial<AppData> | undefined): AppData {
         amount: cat.amount,
         type: cat.type ?? "variable",
         paymentMethod: cat.paymentMethod,
+        dueDate: /^\d{4}-\d{2}-\d{2}$/.test(cat.dueDate ?? "") ? cat.dueDate : undefined,
         color: cat.color,
       }
     }),
@@ -63,7 +66,7 @@ function freshStore(): MultiWalletStore {
   const walletId = uid()
   return {
     schemaVersion: SCHEMA_VERSION,
-    wallets: [{ id: walletId, name: "Pessoal", color: COLORS[0], months: [{ id, data: clone(DEFAULT_DATA) }], recurringExpenses: [], recurringIncomes: [] }],
+    wallets: [{ id: walletId, name: "Pessoal", color: COLORS[0], months: [{ id, data: clone(DEFAULT_DATA) }], recurringExpenses: [], recurringIncomes: [], creditCards: [], creditCardPurchases: [], recurringExpensePayments: {} }],
     activeWalletId: walletId,
     activeMonthId: id,
     currency: DEFAULT_CURRENCY,
@@ -88,11 +91,24 @@ function migrate(raw: unknown): MultiWalletStore {
       name: w.name ?? "Carteira",
       color: w.color ?? COLORS[i % COLORS.length],
       emoji: w.emoji,
+      taxId: w.taxId?.replace(/\D/g, "") || undefined,
       months: (w.months ?? [])
         .filter(m => isMonthId(m.id))
         .map(m => ({ id: m.id, data: cleanData(m.data) })),
       recurringExpenses: w.recurringExpenses ?? [],
       recurringIncomes: w.recurringIncomes ?? [],
+      creditCards: (w.creditCards ?? []).map(card => ({
+        ...card,
+        lastFour: card.lastFour?.replace(/\D/g, "").slice(-4) || undefined,
+        archived: card.archived || undefined,
+      })),
+      creditCardPurchases: (w.creditCardPurchases ?? []).map(purchase => ({
+        ...purchase,
+        recurring: purchase.recurring || undefined,
+        active: purchase.recurring ? purchase.active !== false : undefined,
+        installments: purchase.recurring ? undefined : purchase.installments,
+      })),
+      recurringExpensePayments: w.recurringExpensePayments ?? {},
     }))
     return {
       schemaVersion: SCHEMA_VERSION,
@@ -126,7 +142,7 @@ function migrate(raw: unknown): MultiWalletStore {
 
   return {
     schemaVersion: SCHEMA_VERSION,
-    wallets: [{ id: walletId, name: "Pessoal", months, recurringExpenses: [], recurringIncomes: [] }],
+    wallets: [{ id: walletId, name: "Pessoal", months, recurringExpenses: [], recurringIncomes: [], creditCards: [], creditCardPurchases: [], recurringExpensePayments: {} }],
     activeWalletId: walletId,
     activeMonthId,
     currency: obj.currency ?? DEFAULT_CURRENCY,
@@ -150,13 +166,6 @@ function getMonthData(wallet: Wallet, monthId: string): AppData {
   }
 }
 
-/** Whether a recurring expense/income entry is active in the given month. */
-function isRecurringActive(r: { startMonth: string; installments?: number }, monthId: string): boolean {
-  if (monthId < r.startMonth) return false
-  if (r.installments == null) return true
-  return monthId <= shiftMonth(r.startMonth, r.installments - 1)
-}
-
 /** Recurring expenses of a wallet active in the given month. */
 function recurringForWallet(wallet: Wallet, monthId: string): RecurringExpense[] {
   return wallet.recurringExpenses.filter(r => isRecurringActive(r, monthId))
@@ -177,6 +186,17 @@ export interface ForecastMonth {
   saldo: number
 }
 
+/** A recurring bill due in the selected month, including its wallet and settlement state. */
+export interface MonthlyPaymentItem {
+  walletId: string
+  walletName: string
+  walletColor?: string
+  expense: RecurringExpense
+  payment?: RecurringExpensePayment
+  source?: "credit_card" | "manual"
+  purchaseCount?: number
+}
+
 /** 12-month projection (recurring + already-entered manual) for a given set of wallets. */
 function buildForecast(wallets: Wallet[], locale?: string): ForecastMonth[] {
   return monthRange(currentMonthId(), FORECAST_MONTHS).map(id => {
@@ -185,6 +205,7 @@ function buildForecast(wallets: Wallet[], locale?: string): ForecastMonth[] {
     let income = 0
     for (const w of wallets) {
       fixed += recurringForWallet(w, id).reduce((s, r) => s + r.amount, 0)
+      fixed += creditCardInvoicesForMonth(w, id).reduce((s, invoice) => s + invoice.amount, 0)
       income += recurringIncomeForWallet(w, id).reduce((s, r) => s + r.amount, 0)
       const md = w.months.find(m => m.id === id)
       if (md) {
@@ -295,10 +316,81 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
     return wallet ? recurringIncomeForWallet(wallet, store.activeMonthId).map(toIncomeSource) : []
   }, [store])
 
+  /** All recurring bills active in the selected month, regardless of the wallet selected above. */
+  const monthlyPaymentItems = useMemo<MonthlyPaymentItem[]>(() => {
+    if (!store) return []
+    return store.wallets
+      .flatMap(wallet => [
+        ...recurringForWallet(wallet, store.activeMonthId).map(expense => ({
+          walletId: wallet.id,
+          walletName: wallet.name,
+          walletColor: wallet.color,
+          expense,
+          payment: wallet.recurringExpensePayments?.[`${expense.id}:${store.activeMonthId}`],
+        })),
+        ...(wallet.months.find(month => month.id === store.activeMonthId)?.data.expenseCategories ?? [])
+          .filter(expense => expense.dueDate?.startsWith(store.activeMonthId))
+          .map(category => {
+            const expense: RecurringExpense = {
+              id: `manual:${category.id}`,
+              name: category.name,
+              amount: category.amount,
+              color: category.color,
+              dueDay: Number(category.dueDate!.slice(8, 10)),
+              startMonth: store.activeMonthId,
+            }
+            return {
+              walletId: wallet.id,
+              walletName: wallet.name,
+              walletColor: wallet.color,
+              expense,
+              payment: wallet.recurringExpensePayments?.[`${expense.id}:${store.activeMonthId}`],
+              source: "manual" as const,
+            }
+          }),
+        ...creditCardInvoicesForMonth(wallet, store.activeMonthId).map(invoice => {
+          const expense = invoiceAsBill(invoice)
+          return {
+            walletId: wallet.id,
+            walletName: wallet.name,
+            walletColor: wallet.color,
+            expense,
+            payment: wallet.recurringExpensePayments?.[`${expense.id}:${store.activeMonthId}`],
+            source: "credit_card" as const,
+            purchaseCount: invoice.items.length,
+          }
+        }),
+      ])
+      .sort((a, b) => (a.expense.dueDay ?? 32) - (b.expense.dueDay ?? 32) || a.expense.name.localeCompare(b.expense.name))
+  }, [store])
+
   const manualIncome = data.incomeSources.reduce((s, i) => s + i.amount, 0)
   const totalIncome = manualIncome + activeRecurringIncomes.reduce((s, i) => s + i.amount, 0)
   const manualExpenses = data.expenseCategories.reduce((s, c) => s + c.amount, 0)
-  const totalExpenses = manualExpenses + activeRecurringExpenses.reduce((s, c) => s + c.amount, 0)
+  const activeCreditCardInvoices = useMemo<ExpenseCategory[]>(() => {
+    if (!store) return []
+    const invoices = (wallet: Wallet) => creditCardInvoicesForMonth(wallet, store.activeMonthId).map(invoice => ({
+      id: `card:${invoice.card.id}`,
+      name: `Fatura ${invoice.card.name}${invoice.card.lastFour ? ` •••• ${invoice.card.lastFour}` : ""}`,
+      amount: invoice.amount,
+      type: "fixed" as const,
+      color: invoice.card.color,
+    }))
+    if (store.activeWalletId === ALL_WALLETS) return store.wallets.flatMap(wallet => invoices(wallet).map(item => ({ ...item, id: `${wallet.id}:${item.id}` })))
+    const wallet = store.wallets.find(item => item.id === store.activeWalletId)
+    return wallet ? invoices(wallet) : []
+  }, [store])
+
+  /** Invoices of the active wallet shaped as bills, so the review screen settles them like any other. */
+  const activeCreditCardBills = useMemo(() => {
+    if (!store || store.activeWalletId === ALL_WALLETS) return []
+    const wallet = store.wallets.find(item => item.id === store.activeWalletId)
+    if (!wallet) return []
+    return creditCardInvoicesForMonth(wallet, store.activeMonthId)
+      .map(invoice => ({ bill: invoiceAsBill(invoice), detail: invoiceBreakdown(invoice) }))
+  }, [store])
+
+  const totalExpenses = manualExpenses + activeRecurringExpenses.reduce((s, c) => s + c.amount, 0) + activeCreditCardInvoices.reduce((s, c) => s + c.amount, 0)
   const remainder = totalIncome - totalExpenses
   const totalPct = data.investmentBuckets.reduce((s, b) => s + b.percentage, 0)
 
@@ -316,7 +408,8 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
       const income = manualIncome + recurringIncome
       const manual = md ? md.data.expenseCategories.reduce((s, c) => s + c.amount, 0) : 0
       const recurring = recurringForWallet(w, store.activeMonthId).reduce((s, r) => s + r.amount, 0)
-      const expenses = manual + recurring
+      const cardInvoices = creditCardInvoicesForMonth(w, store.activeMonthId).reduce((s, invoice) => s + invoice.amount, 0)
+      const expenses = manual + recurring + cardInvoices
       return { id: w.id, name: w.name, income, expenses, remainder: income - expenses }
     })
   }, [store])
@@ -383,6 +476,94 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
     })
   }
 
+  /** Only cards without purchases can be deleted, so no invoice history is lost silently. Archive the rest. */
+  function removeCreditCardFrom(walletId: string, cardId: string) {
+    if (!store) return
+    const wallet = store.wallets.find(w => w.id === walletId)
+    if (!wallet || (wallet.creditCardPurchases ?? []).some(purchase => purchase.creditCardId === cardId)) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w => (w.id === walletId
+        ? { ...w, creditCards: (w.creditCards ?? []).filter(card => card.id !== cardId) }
+        : w)),
+    })
+  }
+
+  function updateCreditCardIn(walletId: string, cardId: string, patch: Partial<CreditCard>) {
+    if (!store) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w => (w.id === walletId
+        ? { ...w, creditCards: (w.creditCards ?? []).map(card => (card.id === cardId ? { ...card, ...patch } : card)) }
+        : w)),
+    })
+  }
+
+  /** Archiving hides the card from new purchases; installments and active recurring purchases keep running. */
+  function setCreditCardArchived(walletId: string, cardId: string, archived: boolean) {
+    updateCreditCardIn(walletId, cardId, { archived: archived || undefined })
+  }
+
+  function updateCreditCardPurchaseIn(walletId: string, purchaseId: string, patch: Partial<CreditCardPurchase>) {
+    if (!store) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w => (w.id === walletId
+        ? { ...w, creditCardPurchases: (w.creditCardPurchases ?? []).map(purchase => (purchase.id === purchaseId ? { ...purchase, ...patch } : purchase)) }
+        : w)),
+    })
+  }
+
+  function removeCreditCardPurchaseFrom(walletId: string, purchaseId: string) {
+    if (!store) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w => (w.id === walletId
+        ? { ...w, creditCardPurchases: (w.creditCardPurchases ?? []).filter(purchase => purchase.id !== purchaseId) }
+        : w)),
+    })
+  }
+
+  function updateCreditCardPurchases(items: CreditCardPurchase[]) {
+    if (!store || isConsolidated || !activeWallet) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w => (w.id === activeWallet.id ? { ...w, creditCardPurchases: items } : w)),
+    })
+  }
+
+  function setRecurringExpensePayment(
+    expenseId: string,
+    monthId: string,
+    payment: RecurringExpensePayment | null,
+  ) {
+    if (!store || isConsolidated || !activeWallet) return
+    setRecurringExpensePaymentForWallet(activeWallet.id, expenseId, monthId, payment)
+  }
+
+  function setRecurringExpensePaymentForWallet(
+    walletId: string,
+    expenseId: string,
+    monthId: string,
+    payment: RecurringExpensePayment | null,
+  ) {
+    if (!store) return
+    const key = `${expenseId}:${monthId}`
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w =>
+        w.id === walletId
+          ? {
+              ...w,
+              recurringExpensePayments: payment
+                ? { ...(w.recurringExpensePayments ?? {}), [key]: payment }
+                : Object.fromEntries(Object.entries(w.recurringExpensePayments ?? {}).filter(([entryKey]) => entryKey !== key)),
+            }
+          : w,
+      ),
+    })
+  }
+
   /** Applies `mutate` to a wallet's month data, seeding the month (like getMonthData) if absent. */
   function withMonthData(w: Wallet, monthId: string, mutate: (d: AppData) => AppData): Wallet {
     const nextData = mutate(getMonthData(w, monthId))
@@ -441,6 +622,72 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
     })
   }
 
+  /** Adds a purchase to a card in a specific wallet. Its invoices are derived from the card dates. */
+  function addCreditCardPurchaseTo(walletId: string, item: CreditCardPurchase) {
+    if (!store) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w =>
+        w.id === walletId
+          ? { ...w, creditCardPurchases: [...(w.creditCardPurchases ?? []), item] }
+          : w,
+      ),
+    })
+  }
+
+  /** Moves an existing one-off expense into a card invoice, avoiding a duplicate charge. */
+  function moveExpenseToCreditCard(
+    expenseId: string,
+    creditCardId: string,
+    purchasedOn: string,
+    installments?: number,
+    recurring?: boolean,
+  ) {
+    if (!store || isConsolidated || !activeWallet) return
+    const expense = getMonthData(activeWallet, store.activeMonthId).expenseCategories.find(item => item.id === expenseId)
+    if (!expense || !(activeWallet.creditCards ?? []).some(card => card.id === creditCardId)) return
+
+    const purchase: CreditCardPurchase = {
+      id: uid(),
+      creditCardId,
+      name: expense.name,
+      amount: expense.amount,
+      purchasedOn,
+      installments: recurring ? undefined : (installments && installments > 1 ? installments : undefined),
+      recurring: recurring || undefined,
+      active: recurring ? true : undefined,
+    }
+
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(wallet => {
+        if (wallet.id !== activeWallet.id) return wallet
+        const nextWallet = withMonthData(wallet, store.activeMonthId, monthData => ({
+          ...monthData,
+          expenseCategories: monthData.expenseCategories.filter(item => item.id !== expenseId),
+        }))
+        const paymentKey = `manual:${expenseId}:${store.activeMonthId}`
+        return {
+          ...nextWallet,
+          creditCardPurchases: [...(wallet.creditCardPurchases ?? []), purchase],
+          recurringExpensePayments: Object.fromEntries(
+            Object.entries(wallet.recurringExpensePayments ?? {}).filter(([key]) => key !== paymentKey),
+          ),
+        }
+      }),
+    })
+  }
+
+  function addCreditCardTo(walletId: string, card: CreditCard) {
+    if (!store) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(w =>
+        w.id === walletId ? { ...w, creditCards: [...(w.creditCards ?? []), card] } : w,
+      ),
+    })
+  }
+
   function switchMonth(id: string) {
     if (!store) return
     saveStore({ ...store, activeMonthId: id })
@@ -460,7 +707,7 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
     const id = uid()
     const wallet: Wallet = {
       id, name, color: COLORS[store.wallets.length % COLORS.length],
-      months: [], recurringExpenses: [], recurringIncomes: [],
+      months: [], recurringExpenses: [], recurringIncomes: [], creditCards: [], creditCardPurchases: [], recurringExpensePayments: {},
     }
     saveStore({ ...store, wallets: [...store.wallets, wallet], activeWalletId: id })
   }
@@ -468,6 +715,17 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
   function renameWallet(id: string, name: string) {
     if (!store) return
     saveStore({ ...store, wallets: store.wallets.map(w => (w.id === id ? { ...w, name } : w)) })
+  }
+
+  function updateWalletTaxIds(taxIds: Record<string, string>) {
+    if (!store) return
+    saveStore({
+      ...store,
+      wallets: store.wallets.map(wallet => ({
+        ...wallet,
+        taxId: taxIds[wallet.id]?.replace(/\D/g, "") || undefined,
+      })),
+    })
   }
 
   function deleteWallet(id: string) {
@@ -516,6 +774,9 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
     addExpenseTo,
     addRecurringIncomeTo,
     addRecurringExpenseTo,
+    addCreditCardPurchaseTo,
+    addCreditCardTo,
+    moveExpenseToCreditCard,
     // recurring income
     recurringIncomes: activeWallet?.recurringIncomes ?? [],
     activeRecurringIncomes,
@@ -524,6 +785,20 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
     recurringExpenses: activeWallet?.recurringExpenses ?? [],
     activeRecurringExpenses,
     updateRecurringExpenses,
+    recurringExpensePayments: activeWallet?.recurringExpensePayments ?? {},
+    setRecurringExpensePayment,
+    creditCards: activeWallet?.creditCards ?? [],
+    creditCardPurchases: activeWallet?.creditCardPurchases ?? [],
+    updateCreditCardPurchases,
+    removeCreditCardFrom,
+    updateCreditCardIn,
+    setCreditCardArchived,
+    updateCreditCardPurchaseIn,
+    removeCreditCardPurchaseFrom,
+    activeCreditCardInvoices,
+    activeCreditCardBills,
+    monthlyPaymentItems,
+    setRecurringExpensePaymentForWallet,
     forecast,
     forecastByWallet,
     // months
@@ -539,6 +814,7 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
     switchWallet,
     createWallet,
     renameWallet,
+    updateWalletTaxIds,
     deleteWallet,
     // misc
     currency: store?.currency ?? DEFAULT_CURRENCY,

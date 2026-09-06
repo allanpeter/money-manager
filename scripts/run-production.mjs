@@ -40,13 +40,29 @@ function stop(code = 0) {
     .finally(() => process.exit(exitCode))
 }
 
+function run(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: "inherit" })
+    child.once("error", reject)
+    child.once("exit", code => code === 0 ? resolve() : reject(new Error(`${command} exited with code ${code ?? 1}`)))
+  })
+}
+
 process.once("SIGINT", () => stop(0))
 process.once("SIGTERM", () => stop(0))
 
-start(process.execPath, ["server.js"])
+async function main() {
+  await run(process.execPath, ["scripts/migrate-production.mjs"])
+  start(process.execPath, ["server.js"])
 
-if (process.env.DISCORD_BOT_TOKEN?.trim() || process.env.TELEGRAM_BOT_TOKEN?.trim()) {
-  start(process.execPath, ["node_modules/tsx/dist/cli.mjs", "scripts/assistant.ts"])
-} else {
-  console.info("assistant disabled: configure DISCORD_BOT_TOKEN or TELEGRAM_BOT_TOKEN to enable it")
+  if (process.env.DISCORD_BOT_TOKEN?.trim() || process.env.TELEGRAM_BOT_TOKEN?.trim()) {
+    start(process.execPath, ["node_modules/tsx/dist/cli.mjs", "scripts/assistant.ts"])
+  } else {
+    console.info("assistant disabled: configure DISCORD_BOT_TOKEN or TELEGRAM_BOT_TOKEN to enable it")
+  }
 }
+
+void main().catch(error => {
+  console.error("database migration failed", error)
+  process.exit(1)
+})

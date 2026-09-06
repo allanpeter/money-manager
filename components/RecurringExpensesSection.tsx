@@ -184,6 +184,22 @@ export function RecurringExpensesSection({ items, onChange }: Readonly<Props>) {
                 </label>
               )}
 
+              <label className="flex items-center gap-1.5 text-zinc-500 text-xs bg-zinc-700/40 rounded-lg px-2 py-1">
+                vence dia
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  placeholder="—"
+                  value={item.dueDay ?? ""}
+                  onChange={e => {
+                    const day = Number.parseInt(e.target.value)
+                    update(item.id, "dueDay", Number.isFinite(day) ? Math.min(31, Math.max(1, day)) : undefined)
+                  }}
+                  className="bg-transparent text-zinc-300 outline-none w-8"
+                />
+              </label>
+
               <select
                 value={item.paymentMethod ?? ""}
                 onChange={e => update(item.id, "paymentMethod", (e.target.value || undefined) as PaymentMethod | undefined)}

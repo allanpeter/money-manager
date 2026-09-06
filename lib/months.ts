@@ -6,6 +6,12 @@ export function currentMonthId(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
 }
 
+/** Returns "YYYY-MM-DD" for today. */
+export function currentDateId(): string {
+  const now = new Date()
+  return `${currentMonthId()}-${String(now.getDate()).padStart(2, "0")}`
+}
+
 /** Returns true if a string is a valid "YYYY-MM" month id. */
 export function isMonthId(value: string): boolean {
   return /^\d{4}-\d{2}$/.test(value)
@@ -21,6 +27,11 @@ export function monthLabel(id: string, locale: string = DEFAULT_LOCALE): string 
 }
 
 /** Shifts a "YYYY-MM" id by `delta` months (can be negative). */
+/** Returns true if a string is a valid "YYYY-MM-DD" date id. */
+export function isDateId(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
+}
+
 export function shiftMonth(id: string, delta: number): string {
   const [year, month] = id.split("-").map(Number)
   const d = new Date(year, month - 1 + delta, 1)

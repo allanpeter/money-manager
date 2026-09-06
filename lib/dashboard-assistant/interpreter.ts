@@ -2,7 +2,7 @@ import OpenAI from "openai"
 import { EMPTY_DASHBOARD_ACTION, type DashboardAction, type DashboardAssistantContext, type DashboardInterpretation, type PendingDashboardAction } from "./types"
 
 const actionProperties = {
-  kind: { type: "string", enum: ["chat", "create_wallet", "add_income", "add_expense", "add_recurring_income", "add_recurring_expense", "query_summary", "list_wallets", "unknown"] },
+  kind: { type: "string", enum: ["chat", "create_wallet", "add_income", "add_expense", "add_recurring_income", "add_recurring_expense", "add_card_purchase", "pay_bill", "query_summary", "query_cards", "list_wallets", "unknown"] },
   walletName: { type: ["string", "null"] },
   walletId: { type: ["string", "null"] },
   itemName: { type: ["string", "null"] },
@@ -12,6 +12,12 @@ const actionProperties = {
   expenseType: { type: ["string", "null"], enum: ["fixed", "variable", null] },
   paymentMethod: { type: ["string", "null"], enum: ["pix", "credit", "debit", "cash", null] },
   installments: { type: ["integer", "null"], minimum: 1 },
+  cardName: { type: ["string", "null"], description: "Cartão citado pelo usuário" },
+  cardId: { type: ["string", "null"], description: "Reservado ao sistema, sempre null" },
+  billId: { type: ["string", "null"], description: "Reservado ao sistema, sempre null" },
+  purchasedOn: { type: ["string", "null"], description: "Data da compra, AAAA-MM-DD" },
+  recurring: { type: ["boolean", "null"], description: "Compra de cartão cobrada todo mês" },
+  amountMode: { type: ["string", "null"], enum: ["total", "installment", null], description: "amountCents é o total da compra ou o valor de cada parcela" },
 } as const
 
 const schema = {
@@ -39,12 +45,16 @@ Para conversas, saudações ou perguntas sem operação, use chat e responda de 
 Use create_wallet para criar uma carteira como PF, PJ, esposa ou filhos.
 Use add_income e add_expense para lançamentos apenas do mês escolhido. Use add_recurring_income e add_recurring_expense quando o usuário disser mensal, recorrente, todo mês ou informar parcelas.
 Quando o usuário disser “até julho de 2028”, preencha endMonthId como “2028-07” e deixe monthId null, exceto se ele também informar explicitamente o mês de início. Para “no mesmo prazo”, copie o mesmo endMonthId para cada operação recorrente. Nunca calcule nem invente installments quando houver endMonthId: o backend calcula o período.
-Para uma compra no cartão use add_expense e paymentMethod credit. O sistema atual não controla fatura nem quitação de contas: registre a compra como despesa.
+Use add_card_purchase para compras no cartão de crédito, informando cardName com o cartão citado. O sistema monta a fatura sozinho: cada compra entra na fatura do cartão conforme o dia de fechamento, e parcelas futuras caem nas faturas seguintes.
+Em add_card_purchase, installments é o número de parcelas e amountMode diz o que é amountCents: “total” quando o usuário der o valor cheio (“R$ 300 em 3x”) e “installment” quando ele der o valor de cada parcela (“3x de R$ 100”). Na dúvida use total. Preencha recurring true quando a compra for assinatura ou cobrança mensal no cartão (“todo mês”, “assinatura”, “mensalidade”), e nesse caso deixe installments null. Preencha purchasedOn com a data da compra em AAAA-MM-DD quando o usuário informar; caso contrário deixe null e o sistema usa hoje.
+Use pay_bill para quitar uma conta ou fatura do mês (“paguei o aluguel”, “marcar a fatura do Nubank como paga”), com itemName igual ao nome da conta ou do cartão. A fatura é paga inteira; nunca marque compras individuais como pagas.
+Use query_cards para perguntas sobre cartões e faturas (“quanto está a fatura?”, “quais cartões tenho?”, “o que tem na fatura do Nubank?”).
+Use add_expense com paymentMethod credit apenas para uma despesa avulsa sem cartão cadastrado.
 Use query_summary para saldo, receitas ou despesas; se o usuário não citar carteira, a consulta é consolidada. Use list_wallets para listar as carteiras.
 Para lançamentos e criação, deixe reply vazio: o sistema fará perguntas e pedirá confirmação. Para consultas, deixe os campos não necessários nulos.
-walletId é reservado ao sistema e deve sempre ser null. Não preencha walletName se o usuário não citou explicitamente uma carteira, mesmo se existir apenas uma disponível. Se o usuário responder uma carteira para um lote pendente, repita essa carteira em cada ação do lote.
+walletId, cardId e billId são reservados ao sistema e devem sempre ser null. Não preencha walletName se o usuário não citou explicitamente uma carteira, mesmo se existir apenas uma disponível. Se o usuário responder uma carteira para um lote pendente, repita essa carteira em cada ação do lote.
 Se o usuário não informar mês, deixe monthId null; o sistema aplicará o mês atual.
-Use unknown apenas para pedido financeiro não suportado, explicando brevemente em reply que você pode registrar receitas, despesas, recorrências, criar carteiras e mostrar resumos.`
+Use unknown apenas para pedido financeiro não suportado, explicando brevemente em reply que você pode registrar receitas, despesas, recorrências, compras no cartão, quitar contas e faturas, criar carteiras e mostrar resumos.`
 }
 
 export async function interpretDashboardMessage(input: {
@@ -64,6 +74,8 @@ export async function interpretDashboardMessage(input: {
       mensagem: input.text,
       acoesPendentes: input.pending?.actions ?? null,
       carteirasDisponiveis: input.context.wallets.map(wallet => wallet.name),
+      cartoesDisponiveis: input.context.cards.map(card => card.label),
+      contasDoMesAtual: input.context.bills.map(bill => bill.name),
     }),
     text: {
       verbosity: "low",

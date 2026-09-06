@@ -11,12 +11,12 @@ import { TopExpenses } from "@/components/app/TopExpenses"
 
 export default function DashboardPage() {
   const {
-    data, activeRecurringExpenses,
+    data, activeRecurringExpenses, activeCreditCardInvoices,
     totalIncome, totalExpenses, remainder, totalPct,
     forecast, forecastByWallet, walletBreakdown, wallets,
   } = useApp()
 
-  const allExpenses = [...data.expenseCategories, ...activeRecurringExpenses]
+  const allExpenses = [...data.expenseCategories, ...activeRecurringExpenses, ...activeCreditCardInvoices]
   const fixed = allExpenses.filter(c => c.type === "fixed").reduce((s, c) => s + c.amount, 0)
   const variable = allExpenses.filter(c => c.type === "variable").reduce((s, c) => s + c.amount, 0)
   const savingsRate = totalIncome > 0 ? Math.round((remainder / totalIncome) * 100) : 0

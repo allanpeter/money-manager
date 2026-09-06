@@ -1,4 +1,5 @@
 import type { ExpenseType, PaymentMethod } from "@/lib/types"
+import type { PurchaseAmountMode } from "@/lib/credit-cards"
 
 export type DashboardActionKind =
   | "chat"
@@ -7,7 +8,10 @@ export type DashboardActionKind =
   | "add_expense"
   | "add_recurring_income"
   | "add_recurring_expense"
+  | "add_card_purchase"
+  | "pay_bill"
   | "query_summary"
+  | "query_cards"
   | "list_wallets"
   | "unknown"
 
@@ -22,6 +26,18 @@ export interface DashboardAction {
   expenseType: ExpenseType | null
   paymentMethod: PaymentMethod | null
   installments: number | null
+  /** Card the purchase belongs to, as the user named it. */
+  cardName: string | null
+  /** Resolved by the system, never by the model. */
+  cardId: string | null
+  /** Resolved by the system, never by the model. */
+  billId: string | null
+  /** Purchase date, AAAA-MM-DD. Decides which invoice the purchase falls into. */
+  purchasedOn: string | null
+  /** Card purchase charged again every month until someone deactivates it. */
+  recurring: boolean | null
+  /** Whether amountCents is the whole purchase or the value of each installment. */
+  amountMode: PurchaseAmountMode | null
 }
 
 export interface DashboardInterpretation {
@@ -54,6 +70,10 @@ export interface DashboardAssistantResult {
 
 export interface DashboardAssistantContext {
   wallets: Array<{ id: string; name: string }>
+  /** Cards available for new purchases, archived ones excluded. */
+  cards: Array<{ id: string; name: string; label: string; walletId: string; walletName: string }>
+  /** Payable lines of the current month, used to resolve "marcar X como pago". */
+  bills: Array<{ id: string; name: string; amount: number; walletId: string; walletName: string; monthId: string; settled: boolean }>
 }
 
 export const EMPTY_DASHBOARD_ACTION: DashboardAction = {
@@ -67,4 +87,10 @@ export const EMPTY_DASHBOARD_ACTION: DashboardAction = {
   expenseType: null,
   paymentMethod: null,
   installments: null,
+  cardName: null,
+  cardId: null,
+  billId: null,
+  purchasedOn: null,
+  recurring: null,
+  amountMode: null,
 }

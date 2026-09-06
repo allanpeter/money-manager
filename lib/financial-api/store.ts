@@ -7,7 +7,7 @@ import { withWorkspace } from "@/lib/db"
 import type { AppData, MultiWalletStore, Wallet } from "@/lib/types"
 import { COLORS, DEFAULT_CURRENCY, DEFAULT_LOCALE } from "@/lib/utils"
 
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 6
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -18,7 +18,7 @@ export function createFinancialStore(): MultiWalletStore {
   const walletId = randomUUID()
   return {
     schemaVersion: SCHEMA_VERSION,
-    wallets: [{ id: walletId, name: "Pessoal", color: COLORS[0], months: [{ id: monthId, data: clone(DEFAULT_DATA) }], recurringExpenses: [], recurringIncomes: [] }],
+    wallets: [{ id: walletId, name: "Pessoal", color: COLORS[0], months: [{ id: monthId, data: clone(DEFAULT_DATA) }], recurringExpenses: [], recurringIncomes: [], creditCards: [], creditCardPurchases: [], recurringExpensePayments: {} }],
     activeWalletId: walletId,
     activeMonthId: monthId,
     currency: DEFAULT_CURRENCY,

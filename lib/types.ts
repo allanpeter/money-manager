@@ -16,6 +16,8 @@ export interface ExpenseCategory {
   amount: number
   type: ExpenseType
   paymentMethod?: PaymentMethod
+  /** Optional ISO due date for a one-off payable. */
+  dueDate?: string
   color: string
 }
 
@@ -47,6 +49,17 @@ export interface RecurringExpense {
   startMonth: string
   /** Total number of months it repeats for. Absent means it repeats indefinitely. */
   installments?: number
+  /** Day of the month the bill is due. Used for payment review and reminders. */
+  dueDay?: number
+}
+
+export type RecurringExpensePaymentStatus = "paid" | "no_charge"
+
+/** The settlement of one recurring expense in one specific month. Missing means open. */
+export interface RecurringExpensePayment {
+  status: RecurringExpensePaymentStatus
+  paidAmount?: number
+  paidAt?: string
 }
 
 /** A wallet-level income source that repeats across months without needing to be re-entered. */
@@ -57,6 +70,37 @@ export interface RecurringIncome {
   /** "YYYY-MM", the first month it applies. */
   startMonth: string
   /** Total number of months it repeats for. Absent means it repeats indefinitely. */
+  installments?: number
+}
+
+/** Credit card associated with one wallet. Its due date applies to every invoice. */
+export interface CreditCard {
+  id: string
+  name: string
+  /** Last four digits printed on the physical or virtual card. */
+  lastFour?: string
+  color: string
+  /** Invoice payment day (1–31). */
+  dueDay: number
+  /** Day after which purchases move to the following invoice (1–31). */
+  closingDay: number
+  /** Keeps the card out of the pickers for new purchases without touching its existing invoices. */
+  archived?: boolean
+}
+
+/** A purchase whose installments are automatically placed in the card invoices. */
+export interface CreditCardPurchase {
+  id: string
+  creditCardId: string
+  name: string
+  /** Full purchase value, not the installment value. */
+  amount: number
+  /** ISO date: YYYY-MM-DD. */
+  purchasedOn: string
+  /** Adds the same amount to every following invoice until it is deactivated. */
+  recurring?: boolean
+  /** Only applies to recurring purchases. Missing means active for backward compatibility. */
+  active?: boolean
   installments?: number
 }
 
@@ -73,9 +117,15 @@ export interface Wallet {
   color?: string
   /** Optional emoji shown before the wallet name. */
   emoji?: string
+  /** CPF or CNPJ associated with this wallet, stored as digits only. */
+  taxId?: string
   months: MonthRecord[]
   recurringExpenses: RecurringExpense[]
   recurringIncomes: RecurringIncome[]
+  creditCards?: CreditCard[]
+  creditCardPurchases?: CreditCardPurchase[]
+  /** Key format: "{recurringExpenseId}:{YYYY-MM}". */
+  recurringExpensePayments?: Record<string, RecurringExpensePayment>
 }
 
 export interface MultiWalletStore {

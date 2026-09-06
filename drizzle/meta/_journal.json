@@ -43,6 +43,13 @@
       "when": 1787932800000,
       "tag": "0005_financial_store",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788048000000,
+      "tag": "0006_personal_details",
+      "breakpoints": true
     }
   ]
 }

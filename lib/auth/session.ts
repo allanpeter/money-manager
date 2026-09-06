@@ -17,6 +17,7 @@ const normalizeEmail = (email: string) => email.trim().toLocaleLowerCase("en-US"
 export interface AuthContext {
   userId: string
   userName: string
+  phone: string | null
   email: string
   workspaceId: string
   workspaceName: string
@@ -29,6 +30,7 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   const [row] = await db().select({
     userId: users.id,
     userName: users.name,
+    phone: users.phone,
     email: users.email,
     workspaceId: workspaces.id,
     workspaceName: workspaces.name,

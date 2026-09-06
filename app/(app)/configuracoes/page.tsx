@@ -1,4 +1,5 @@
 import { IntegrationSettings } from "@/components/app/IntegrationSettings"
+import { PersonalSettings } from "@/components/app/PersonalSettings"
 import { listUserIdentities } from "@/lib/auth/identities"
 import { getAuthContext } from "@/lib/auth/session"
 
@@ -9,5 +10,5 @@ export default async function SettingsPage() {
   if (!auth) return null
   const identities = await listUserIdentities(auth.userId)
   const linked = Object.fromEntries(identities.map(identity => [identity.provider, identity.displayName ?? identity.externalUserId]))
-  return <section className="space-y-4"><header className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5"><h2 className="text-lg font-semibold">Canais da IA</h2><p className="mt-1 text-sm text-zinc-500">Vincule cada canal ao usuário autenticado. Códigos expiram em 10 minutos.</p></header><IntegrationSettings linked={linked} /></section>
+  return <section className="space-y-4"><PersonalSettings initialName={auth.userName} initialPhone={auth.phone} /><header className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5"><h2 className="text-lg font-semibold">Canais da IA</h2><p className="mt-1 text-sm text-zinc-500">Vincule cada canal ao usuário autenticado. Códigos expiram em 10 minutos.</p></header><IntegrationSettings linked={linked} /></section>
 }

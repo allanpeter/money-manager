@@ -1,4 +1,6 @@
 import { executeDashboardAction } from "@/lib/dashboard-assistant/actions"
+import { billPayment, billsForMonth } from "@/lib/bills"
+import { currentMonthId } from "@/lib/months"
 import { loadFinancialStore, saveFinancialStore } from "./store"
 import type { DashboardAction, DashboardAssistantContext } from "@/lib/dashboard-assistant/types"
 
@@ -8,7 +10,10 @@ const executableKinds = new Set([
   "add_expense",
   "add_recurring_income",
   "add_recurring_expense",
+  "add_card_purchase",
+  "pay_bill",
   "query_summary",
+  "query_cards",
   "list_wallets",
 ])
 const mutationKinds = new Set([
@@ -17,6 +22,8 @@ const mutationKinds = new Set([
   "add_expense",
   "add_recurring_income",
   "add_recurring_expense",
+  "add_card_purchase",
+  "pay_bill",
 ])
 
 export function isFinancialAssistantAction(value: unknown): value is DashboardAction {
@@ -37,7 +44,29 @@ export function isFinancialAssistantMutationBatch(actions: DashboardAction[]) {
  * credentials, configuration, audit data or internal wallet identifiers. */
 export async function getFinancialAssistantContext(workspaceId: string): Promise<DashboardAssistantContext> {
   const store = await loadFinancialStore(workspaceId)
-  return { wallets: store.wallets.map(wallet => ({ id: wallet.id, name: wallet.name })) }
+  // The assistant defaults every action to the current month, so its bill list must use the same one.
+  const monthId = currentMonthId()
+  return {
+    wallets: store.wallets.map(wallet => ({ id: wallet.id, name: wallet.name })),
+    cards: store.wallets.flatMap(wallet => (wallet.creditCards ?? [])
+      .filter(card => !card.archived)
+      .map(card => ({
+        id: card.id,
+        name: card.name,
+        label: `${card.name}${card.lastFour ? ` •••• ${card.lastFour}` : ""} (${wallet.name})`,
+        walletId: wallet.id,
+        walletName: wallet.name,
+      }))),
+    bills: store.wallets.flatMap(wallet => billsForMonth(wallet, monthId).map(bill => ({
+      id: bill.id,
+      name: bill.name,
+      amount: bill.amount,
+      walletId: wallet.id,
+      walletName: wallet.name,
+      monthId,
+      settled: Boolean(billPayment(wallet, bill.id, monthId)),
+    }))),
+  }
 }
 
 /** The only financial operation gateway available to the assistant runtime. */

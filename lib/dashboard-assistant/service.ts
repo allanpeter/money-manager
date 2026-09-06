@@ -7,7 +7,7 @@ import { interpretDashboardMessage, isCancellation, isConfirmation, mergeDashboa
 import { executeFinancialAssistantActions, getFinancialAssistantContext } from "@/lib/financial-api/assistant-gateway"
 import type { DashboardAction, DashboardAssistantInput, DashboardAssistantResult, PendingDashboardAction } from "./types"
 
-const dashboardKinds = new Set(["chat", "create_wallet", "add_income", "add_expense", "add_recurring_income", "add_recurring_expense", "query_summary", "list_wallets", "unknown"])
+const dashboardKinds = new Set(["chat", "create_wallet", "add_income", "add_expense", "add_recurring_income", "add_recurring_expense", "add_card_purchase", "pay_bill", "query_summary", "query_cards", "list_wallets", "unknown"])
 
 function asDashboardPending(value: unknown): PendingDashboardAction | null {
   if (!value || typeof value !== "object") return null
@@ -112,7 +112,7 @@ export async function handleDashboardAssistantMessage(input: DashboardAssistantI
       ? pending!.actions.map(action => ({ ...action, walletName: selectedWallet.name, walletId: selectedWallet.id }))
       : mergeDashboardActions(pending?.actions ?? null, interpreted!.actions)
     if (actions.some(action => action.kind === "unknown")) {
-      const result = { message: interpreted?.reply.trim() || "Posso criar uma carteira, registrar receitas ou despesas, criar recorrências e consultar o consolidado." }
+      const result = { message: interpreted?.reply.trim() || "Posso criar carteiras, registrar receitas e despesas, criar recorrências, lançar compras no cartão, quitar contas e faturas e consultar o consolidado." }
       await savePending(input, null)
       await updateCommand(input.workspaceId, command.id, { status: "executed", interpretedAction: actions, result })
       return { ...result, status: "executed" }
