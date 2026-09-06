@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test lib/accounts/*.test.ts lib/assistant/*.test.ts lib/dashboard-assistant/*.test.ts lib/auth/*.test.ts lib/reminders/*.test.ts lib/payment-status.test.ts lib/credit-cards.test.ts",
+    "test": "tsx --test lib/accounts/*.test.ts lib/assistant/*.test.ts lib/dashboard-assistant/*.test.ts lib/auth/*.test.ts lib/reminders/*.test.ts lib/payment-status.test.ts lib/credit-cards.test.ts lib/storage.test.ts",
     "assistant": "tsx scripts/assistant.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",

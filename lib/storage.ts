@@ -41,35 +41,48 @@ export const localStorageAdapter: StorageAdapter = {
   },
 }
 
-/** Fonte principal autenticada. O localStorage é usado apenas para migrar dados
- * já existentes no navegador ou como contingência temporária se a rede cair. */
+/** Blob pré-autenticação, sem dono. Só pode ser adotado uma única vez. */
+const OWNER_KEY = "money-manager-cache-owner"
+
+async function fetchStore(): Promise<{ data: unknown | null; workspaceId: string }> {
+  const response = await fetch("/api/financial-store", { cache: "no-store" })
+  if (!response.ok) throw new Error("Falha ao carregar dados financeiros.")
+  const result = await response.json() as { data?: unknown; workspaceId?: string }
+  if (typeof result.workspaceId !== "string") throw new Error("Resposta inválida do servidor.")
+  return { data: result.data ?? null, workspaceId: result.workspaceId }
+}
+
+/**
+ * Fonte única e autenticada dos dados financeiros.
+ *
+ * O localStorage NUNCA é usado como contingência de leitura: o mesmo navegador
+ * pode ser usado por mais de uma conta, e servir esse cache a quem não é dono
+ * vaza dados de outra pessoa. Ele só existe para adotar, uma única vez, o blob
+ * anterior ao login — e apenas se nenhum outro workspace já o reivindicou.
+ * Falha de rede vira exceção, jamais "conta vazia", porque uma conta vazia faz
+ * o app criar um store novo e sobrescrever os dados reais no servidor.
+ */
 export const databaseStorageAdapter: StorageAdapter = {
   async load() {
     if (typeof window === "undefined") return null
-    try {
-      const response = await fetch("/api/financial-store", { cache: "no-store" })
-      if (!response.ok) throw new Error("Falha ao carregar dados financeiros.")
-      const result = await response.json() as { data?: unknown }
-      if (result.data) return result.data
+    const { data, workspaceId } = await fetchStore()
+    if (data) return data
 
-      const legacy = await localStorageAdapter.load()
-      if (legacy) await this.save(legacy as MultiWalletStore)
-      return legacy
-    } catch {
-      return localStorageAdapter.load()
-    }
+    const owner = localStorage.getItem(OWNER_KEY)
+    if (owner && owner !== workspaceId) return null
+    localStorage.setItem(OWNER_KEY, workspaceId)
+    const legacy = await localStorageAdapter.load()
+    if (!legacy) return null
+    await this.save(legacy as MultiWalletStore)
+    return legacy
   },
   async save(store) {
     if (typeof window === "undefined") return
-    try {
-      const response = await fetch("/api/financial-store", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: store }),
-      })
-      if (!response.ok) throw new Error("Falha ao salvar dados financeiros.")
-    } catch {
-      await localStorageAdapter.save(store)
-    }
+    const response = await fetch("/api/financial-store", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: store }),
+    })
+    if (!response.ok) throw new Error("Falha ao salvar dados financeiros.")
   },
 }

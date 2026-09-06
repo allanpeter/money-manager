@@ -10,7 +10,8 @@ export async function GET() {
   if (!auth) return Response.json({ error: "Não autenticado." }, { status: 401 })
   const [store] = await withWorkspace(auth.workspaceId, database => database.select({ data: financialStores.data })
     .from(financialStores).where(eq(financialStores.workspaceId, auth.workspaceId)).limit(1))
-  return Response.json({ data: store?.data ?? null })
+  // O cliente precisa saber de quem são os dados: o mesmo navegador pode ter mais de uma conta.
+  return Response.json({ data: store?.data ?? null, workspaceId: auth.workspaceId })
 }
 
 export async function PUT(request: Request) {

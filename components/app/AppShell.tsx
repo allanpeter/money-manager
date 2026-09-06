@@ -48,6 +48,21 @@ function ShellInner({ children, userName }: Readonly<{ children: React.ReactNode
     )
   }
 
+  // Falha de carga não pode virar tela vazia editável: qualquer edição sobrescreveria o servidor.
+  if (app.loadError) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
+        <div className="max-w-sm rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-center">
+          <p className="font-medium text-white">Não foi possível carregar seus dados</p>
+          <p className="mt-1 text-sm text-zinc-400">Seus lançamentos estão salvos no servidor. Recarregue a página para tentar de novo.</p>
+          <button type="button" onClick={() => window.location.reload()} className="mt-4 rounded-lg bg-cyan-500/15 px-3 py-2 text-sm font-medium text-cyan-400 hover:bg-cyan-500/25">
+            Recarregar
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       {mobileMenuOpen && (
@@ -122,6 +137,11 @@ function ShellInner({ children, userName }: Readonly<{ children: React.ReactNode
       </aside>
 
       <main className={`min-h-screen transition-[margin] duration-200 ${collapsed ? "lg:ml-20" : "lg:ml-64"}`}>
+        {app.saveError && (
+          <p className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
+            Não foi possível salvar a última alteração no servidor. Verifique a conexão; ela ainda está aberta nesta tela.
+          </p>
+        )}
         <div className="flex h-16 items-center border-b border-zinc-900 px-4 lg:hidden">
           <button
             type="button"

@@ -234,7 +234,18 @@ function aggregateData(wallets: Wallet[], monthId: string): AppData {
 export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
   const [store, setStore] = useState<MultiWalletStore | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const [saveError, setSaveError] = useState(false)
   const [windowCenter, setWindowCenter] = useState(currentMonthId)
+
+  const save = useCallback(async (next: MultiWalletStore) => {
+    try {
+      await adapter.save(next)
+      setSaveError(false)
+    } catch {
+      setSaveError(true)
+    }
+  }, [adapter])
 
   const loadStore = useCallback(() => {
     let cancelled = false
@@ -253,15 +264,18 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
       }
       setStore(next)
       setWindowCenter(next.activeMonthId)
+      setLoadError(false)
       setLoaded(true)
-      if (dirty) void adapter.save(next)
+      if (dirty) void save(next)
     }).catch(() => {
       if (cancelled) return
-      setStore(freshStore())
+      // Sem store não se cria um vazio: salvá-lo apagaria os dados reais no servidor.
+      setStore(null)
+      setLoadError(true)
       setLoaded(true)
     })
     return () => { cancelled = true }
-  }, [adapter])
+  }, [adapter, save])
 
   useEffect(() => {
     return loadStore()
@@ -275,8 +289,8 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
 
   const saveStore = useCallback((next: MultiWalletStore) => {
     setStore(next)
-    void adapter.save(next)
-  }, [adapter])
+    void save(next)
+  }, [save])
 
   const isConsolidated = store?.activeWalletId === ALL_WALLETS
   const activeWallet = store?.wallets.find(w => w.id === store.activeWalletId)
@@ -760,6 +774,8 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
   return {
     data,
     loaded,
+    loadError,
+    saveError,
     totalIncome,
     manualIncome,
     manualExpenses,
