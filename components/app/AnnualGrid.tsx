@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronLeft, ChevronRight, Check, CircleOff, FileUp, FolderPlus, Plus, Undo2 } from "lucide-react"
-import { attentionState, dateId } from "@/lib/accounts/domain"
+import { attentionState, dateId, dueDate } from "@/lib/accounts/domain"
 import type { AccountOccurrence, AccountsGrid, PayableAccount } from "@/lib/accounts/types"
 
 const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
@@ -38,6 +38,7 @@ interface UndoState { occurrence: AccountOccurrence }
 
 export function AnnualGrid() {
   const [year, setYear] = useState(() => new Date().getFullYear())
+  const [reviewMonth, setReviewMonth] = useState(() => new Date().getMonth())
   const [profileId, setProfileId] = useState<string>("all")
   const [grid, setGrid] = useState<AccountsGrid | null>(null)
   const [loading, setLoading] = useState(true)
@@ -128,6 +129,7 @@ export function AnnualGrid() {
     {undo && <div className="flex items-center justify-between gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100"><span>Ocorrência atualizada.</span><button onClick={undoLast} className="inline-flex items-center gap-1 font-medium hover:text-white"><Undo2 className="h-4 w-4" />Desfazer</button></div>}
     {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
     <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2"><button onClick={() => setYear(value => value - 1)} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white" aria-label="Ano anterior"><ChevronLeft className="h-4 w-4" /></button><strong className="tabular-nums text-white">{year}</strong><button onClick={() => setYear(value => value + 1)} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white" aria-label="Próximo ano"><ChevronRight className="h-4 w-4" /></button></div>
+    {grid && <MonthlyReview accounts={grid.accounts} year={year} month={reviewMonth} today={today} onMonthChange={setReviewMonth} onPay={patchOccurrence} />}
     {loading ? <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-10 text-center text-zinc-500">Carregando contas…</div> : <><MobileMonthList accounts={grid?.accounts ?? []} year={year} today={today} onPay={patchOccurrence} /><div className="hidden overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-900 sm:block"><table className="min-w-[1180px] w-full border-collapse text-sm"><thead className="text-xs uppercase tracking-wider text-zinc-500"><tr><th className="sticky left-0 z-20 bg-zinc-900 px-4 py-3 text-left">Conta</th>{months.map((month, index) => <th key={month} className="min-w-24 px-1 py-3 text-center">{month}<span className={`ml-1 text-[10px] ${pendingByMonth[index] ? "text-amber-300" : "text-emerald-400"}`}>{pendingByMonth[index]}</span></th>)}</tr></thead><tbody>{groups.map(([category, accounts]) => <CategoryRows key={category} category={category} accounts={accounts} year={year} today={today} onPay={patchOccurrence} onSetDueDay={setDueDay} onSetClosingDay={setClosingDay} />)}{!groups.length && <tr><td colSpan={13} className="px-4 py-12 text-center text-zinc-500">Nenhuma conta cadastrada. Importe a planilha ou crie a primeira conta.</td></tr>}</tbody><tfoot><tr className="border-t border-zinc-700 bg-zinc-800/60"><th className="sticky left-0 z-10 bg-zinc-800 px-4 py-3 text-left text-xs uppercase tracking-wider text-zinc-300">Total previsto</th>{totalByMonth.map((total, index) => <td key={months[index]} className="px-1 py-3 text-right text-xs font-semibold tabular-nums text-zinc-200">{formatCents(total)}</td>)}</tr></tfoot></table></div></>}
     {showProfiles && <ProfileManager onClose={() => setShowProfiles(false)} onCreated={async profile => { setProfileId(profile.id); setShowProfiles(false); await load() }} />}
     {showAdd && grid && <AccountForm grid={grid} selectedProfileId={profileId === "all" ? null : profileId} onClose={() => setShowAdd(false)} onSaved={async () => { setShowAdd(false); await load() }} />}
@@ -152,6 +154,47 @@ function OccurrenceCell({ occurrence, dueDay, today, cellId, onPay }: { occurren
     ? Math.round((((occurrence.paidAmountCents ?? 0) - occurrence.expectedAmountCents) / occurrence.expectedAmountCents) * 100) : null
   const itemDetails = occurrence.invoiceItems.map(item => `${item.description}: ${formatCents(item.amountCents)}`).join("\n")
   return <div className={`min-h-15 rounded-lg border p-1 ${stateClass(state)}`} title={[statusTitle(state, occurrence), itemDetails].filter(Boolean).join("\n")}>{editing && !occurrence.declaration ? <input autoFocus data-cell={cellId} inputMode="decimal" value={value} onChange={event => setValue(event.target.value)} onKeyDown={async event => { if (event.key === "Enter") await commit(); if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) { event.preventDefault(); const all = [...document.querySelectorAll<HTMLInputElement>("input[data-cell]")]; const index = all.indexOf(event.currentTarget); const offset = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : event.key === "ArrowUp" ? -12 : 12; all[index + offset]?.focus() } }} className="w-full rounded bg-zinc-950/50 px-1 py-1 text-right text-xs outline-none ring-cyan-400 focus:ring-1" /> : <button data-grid-cell={cellId} onKeyDown={event => { if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return; event.preventDefault(); const buttons = [...document.querySelectorAll<HTMLButtonElement>("button[data-grid-cell]")]; const index = buttons.indexOf(event.currentTarget); const offset = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : event.key === "ArrowUp" ? -12 : 12; buttons[index + offset]?.focus() }} onClick={() => occurrence.declaration ? undefined : onPay(occurrence, "paid")} className="w-full px-1 py-1 text-right text-xs font-medium tabular-nums">{formatCents(occurrence.paidAmountCents ?? occurrence.expectedAmountCents)}</button>}{occurrence.invoiceItems.length > 0 && <p className="px-1 text-right text-[10px] opacity-70">{occurrence.invoiceItems.length} compra{occurrence.invoiceItems.length > 1 ? "s" : ""}</p>}{variation != null && <p className="px-1 text-right text-[10px] opacity-70">{variation > 0 ? "+" : ""}{variation}%</p>}{!occurrence.declaration && <div className="flex justify-between gap-1"><button onClick={() => setEditing(true)} className="rounded px-1 text-[10px] opacity-70 hover:bg-black/20">editar</button><button onClick={() => onPay(occurrence, "no_charge")} className="rounded px-1 text-[10px] opacity-70 hover:bg-black/20">não veio</button></div>}{occurrence.declaration === "paid" && <Check className="ml-1 h-3 w-3" />}{occurrence.declaration === "no_charge" && <CircleOff className="ml-1 h-3 w-3" />}</div>
+}
+
+function MonthlyReview({ accounts, year, month, today, onMonthChange, onPay }: {
+  accounts: PayableAccount[]
+  year: number
+  month: number
+  today: string
+  onMonthChange: (month: number) => void
+  onPay: (occurrence: AccountOccurrence, declaration: AccountOccurrence["declaration"], amount?: number) => Promise<void>
+}) {
+  const monthId = `${year}-${String(month + 1).padStart(2, "0")}`
+  const rows = accounts.flatMap(account => {
+    const occurrence = account.occurrences.find(item => item.referenceMonth === monthId)
+    return occurrence ? [{ account, occurrence }] : []
+  }).sort((a, b) => (dueDate(monthId, a.account.dueDay) ?? "9999-99-99").localeCompare(dueDate(monthId, b.account.dueDay) ?? "9999-99-99"))
+  const paid = rows.filter(row => row.occurrence.declaration === "paid").reduce((sum, row) => sum + (row.occurrence.paidAmountCents ?? 0), 0)
+  const open = rows.filter(row => !row.occurrence.declaration).reduce((sum, row) => sum + row.occurrence.expectedAmountCents, 0)
+  const noCharge = rows.filter(row => row.occurrence.declaration === "no_charge").length
+
+  async function payOtherValue(occurrence: AccountOccurrence) {
+    const answer = window.prompt("Valor pago (R$):", ((occurrence.paidAmountCents ?? occurrence.expectedAmountCents) / 100).toFixed(2).replace(".", ","))
+    if (answer == null) return
+    const cents = inputToCents(answer)
+    if (cents == null) return
+    await onPay(occurrence, "paid", cents)
+  }
+
+  return <section className="rounded-2xl border border-cyan-500/30 bg-zinc-900 p-5">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-white">Revisar pagamentos do mês</h3><p className="mt-1 text-sm text-zinc-400">Marque cada conta como paga, informe outro valor ou registre que não houve cobrança.</p></div><select value={month} onChange={event => onMonthChange(Number(event.target.value))} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100">{months.map((label, index) => <option key={label} value={index}>{label} de {year}</option>)}</select></div>
+    <div className="mt-4 grid gap-2 sm:grid-cols-3"><SummaryCard label="Pago" value={formatCents(paid)} tone="text-emerald-300" /><SummaryCard label="Em aberto" value={formatCents(open)} tone={open ? "text-amber-200" : "text-emerald-300"} /><SummaryCard label="Sem cobrança" value={String(noCharge)} tone="text-zinc-300" /></div>
+    <div className="mt-4 space-y-2">{rows.length ? rows.map(({ account, occurrence }) => {
+      const state = attentionState(occurrence, account.dueDay, today, 5)
+      const due = dueDate(monthId, account.dueDay)
+      const resolved = Boolean(occurrence.declaration)
+      return <article key={occurrence.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 ${stateClass(state)}`}><div><p className="font-medium">{account.name}</p><p className="mt-1 text-xs opacity-75">{account.profileName} · {account.walletName} · {due ? `vence ${new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${due}T00:00:00Z`))}` : "sem vencimento"}</p></div><div className="flex flex-wrap items-center justify-end gap-2"><span className="mr-1 text-sm font-semibold tabular-nums">{formatCents(occurrence.paidAmountCents ?? occurrence.expectedAmountCents)}</span>{resolved ? <span className="rounded-lg bg-black/20 px-2 py-1 text-xs font-medium">{statusTitle(state, occurrence)}</span> : <><button onClick={() => onPay(occurrence, "paid")} className="rounded-lg bg-emerald-400/20 px-3 py-2 text-xs font-semibold hover:bg-emerald-400/30">Marcar pago</button><button onClick={() => void payOtherValue(occurrence)} className="rounded-lg bg-black/20 px-3 py-2 text-xs hover:bg-black/30">Outro valor</button><button onClick={() => onPay(occurrence, "no_charge")} className="rounded-lg bg-black/20 px-3 py-2 text-xs hover:bg-black/30">Sem cobrança</button></>}</div></article>
+    }) : <p className="rounded-xl border border-dashed border-zinc-700 px-4 py-6 text-center text-sm text-zinc-500">Não há contas previstas para este mês.</p>}</div>
+  </section>
+}
+
+function SummaryCard({ label, value, tone }: { label: string; value: string; tone: string }) {
+  return <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 px-3 py-3"><p className="text-xs uppercase tracking-wide text-zinc-500">{label}</p><p className={`mt-1 font-semibold tabular-nums ${tone}`}>{value}</p></div>
 }
 
 function MobileMonthList({ accounts, year, today, onPay }: { accounts: PayableAccount[]; year: number; today: string; onPay: (occurrence: AccountOccurrence, declaration: AccountOccurrence["declaration"], amount?: number) => Promise<void> }) {
