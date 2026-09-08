@@ -19,12 +19,40 @@ test("considera o vencimento no mesmo mês do fechamento, inclusive na virada do
   const sameMonthCard = { ...card, closingDay: 9, dueDay: 15 }
   for (const [purchasedOn, expected] of [
     ["2026-08-08", "2026-08"],
-    ["2026-08-09", "2026-08"],
+    ["2026-08-09", "2026-09"],
     ["2026-08-10", "2026-09"],
     ["2026-08-29", "2026-09"],
     ["2026-12-29", "2027-01"],
   ]) {
     assert.equal(firstInvoiceMonth({ ...purchase, purchasedOn }, sameMonthCard), expected)
+  }
+})
+
+test("compra no dia da virada passa ao próximo ciclo quando o vencimento é no mês seguinte", () => {
+  assert.equal(firstInvoiceMonth({ ...purchase, purchasedOn: "2026-08-25" }, card), "2026-10")
+})
+
+test("compra de 09/08 começa em setembro tanto pelo total quanto por cada parcela", () => {
+  for (const mode of ["total", "installment"] as const) {
+    for (const count of [1, 6]) {
+      const split = splitPurchase(mode === "total" ? 540.2 * count : 540.2, count, mode)
+      const cycleWallet = {
+        ...wallet,
+        creditCards: [{ ...card, closingDay: 9, dueDay: 15 }],
+        creditCardPurchases: [{ ...purchase, purchasedOn: "2026-08-09", amount: split.total, installments: split.count }],
+      }
+      assert.deepEqual(creditCardInvoicesForMonth(cycleWallet, "2026-08"), [])
+      const months = ["2026-09", "2026-10", "2026-11", "2026-12", "2027-01", "2027-02", "2027-03"]
+      for (const [index, month] of months.entries()) {
+        const invoices = creditCardInvoicesForMonth(cycleWallet, month)
+        if (index >= count) {
+          assert.deepEqual(invoices, [])
+        } else {
+          assert.equal(invoices[0].amount, 540.2)
+          assert.equal(invoices[0].items[0].installment, index + 1)
+        }
+      }
+    }
   }
 })
 
