@@ -15,6 +15,48 @@ test("compra após o fechamento entra na fatura posterior", () => {
   assert.equal(firstInvoiceMonth({ ...purchase, purchasedOn: "2026-08-26" }, card), "2026-10")
 })
 
+test("considera o vencimento no mesmo mês do fechamento, inclusive na virada do ano", () => {
+  const sameMonthCard = { ...card, closingDay: 9, dueDay: 15 }
+  for (const [purchasedOn, expected] of [
+    ["2026-08-08", "2026-08"],
+    ["2026-08-09", "2026-08"],
+    ["2026-08-10", "2026-09"],
+    ["2026-08-29", "2026-09"],
+    ["2026-12-29", "2027-01"],
+  ]) {
+    assert.equal(firstInvoiceMonth({ ...purchase, purchasedOn }, sameMonthCard), expected)
+  }
+})
+
+test("Playstation de 29/08 em 1x entra somente em setembro com fechamento 9 e vencimento 15", () => {
+  for (const installments of [undefined, 1]) {
+    const singleWallet = {
+      ...wallet,
+      creditCards: [{ ...card, closingDay: 9, dueDay: 15 }],
+      creditCardPurchases: [{ ...purchase, name: "Playstation", purchasedOn: "2026-08-29", amount: 277.56, installments }],
+    }
+    assert.deepEqual(creditCardInvoicesForMonth(singleWallet, "2026-08"), [])
+    const [invoice] = creditCardInvoicesForMonth(singleWallet, "2026-09")
+    assert.equal(invoice.amount, 277.56)
+    assert.equal(invoice.items[0].installment, 1)
+    assert.deepEqual(creditCardInvoicesForMonth(singleWallet, "2026-10"), [])
+  }
+})
+
+test("compra de 29/08 em 6x começa em setembro com fechamento 9 e vencimento 15", () => {
+  const installmentWallet = {
+    ...wallet,
+    creditCards: [{ ...card, closingDay: 9, dueDay: 15 }],
+    creditCardPurchases: [{ ...purchase, purchasedOn: "2026-08-29", amount: 3241.2, installments: 6 }],
+  }
+  for (const [index, month] of ["2026-09", "2026-10", "2026-11", "2026-12", "2027-01", "2027-02"].entries()) {
+    const [invoice] = creditCardInvoicesForMonth(installmentWallet, month)
+    assert.equal(invoice.amount, 540.2)
+    assert.equal(invoice.items[0].installment, index + 1)
+  }
+  assert.deepEqual(creditCardInvoicesForMonth(installmentWallet, "2027-03"), [])
+})
+
 test("distribui compras parceladas pelas faturas sem perder centavos", () => {
   const invoices = ["2026-09", "2026-10", "2026-11"].map(month => creditCardInvoicesForMonth(wallet, month)[0])
   assert.deepEqual(invoices.map(invoice => invoice.amount), [100, 100, 100])

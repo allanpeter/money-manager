@@ -27,7 +27,10 @@ export function firstInvoiceMonth(purchase: CreditCardPurchase, card: CreditCard
   const date = parsePurchaseDate(purchase.purchasedOn)
   if (!date) return null
   const purchaseMonth = `${date.year}-${String(date.month).padStart(2, "0")}`
-  return shiftMonth(purchaseMonth, date.day > card.closingDay ? 2 : 1)
+  const closingMonthOffset = date.day > card.closingDay ? 1 : 0
+  // A bill only moves to the month after closing when its due day precedes closing.
+  const dueMonthOffset = card.dueDay < card.closingDay ? 1 : 0
+  return shiftMonth(purchaseMonth, closingMonthOffset + dueMonthOffset)
 }
 
 function installmentAmount(total: number, installments: number, installment: number): number {
