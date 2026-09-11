@@ -10,12 +10,18 @@ export const workspaceType = pgEnum("workspace_type", ["personal", "shared", "bu
 export const membershipRole = pgEnum("membership_role", ["owner", "editor", "viewer"])
 export const identityProvider = pgEnum("identity_provider", ["discord", "telegram", "whatsapp"])
 export const financialProfileType = pgEnum("financial_profile_type", ["person", "business", "dependent", "other"])
+export const assistantTone = pgEnum("assistant_tone", ["warm", "balanced", "direct"])
+export const assistantVerbosity = pgEnum("assistant_verbosity", ["brief", "balanced", "detailed"])
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull(),
   phone: text("phone"),
+  assistantPreferredName: text("assistant_preferred_name"),
+  assistantTone: assistantTone("assistant_tone").default("balanced").notNull(),
+  assistantVerbosity: assistantVerbosity("assistant_verbosity").default("balanced").notNull(),
+  assistantGreetings: boolean("assistant_greetings").default(true).notNull(),
   passwordHash: text("password_hash"),
   disabledAt: timestamp("disabled_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -198,6 +204,7 @@ export const assistantSessions = pgTable("assistant_sessions", {
   conversationKey: text("conversation_key").notNull(),
   userKey: text("user_key").notNull(),
   pendingAction: jsonb("pending_action").$type<unknown>(),
+  lastGreetedOn: date("last_greeted_on"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, table => [uniqueIndex("assistant_sessions_identity_unique").on(table.workspaceId, table.channel, table.conversationKey, table.userKey)])

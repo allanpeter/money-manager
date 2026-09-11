@@ -8,6 +8,10 @@ let pool: Pool | undefined
 function databaseUrl(): string {
   const value = process.env.DATABASE_URL
   if (!value) throw new Error("DATABASE_URL não configurada")
+  const database = new URL(value).pathname.replace(/^\//, "")
+  if (process.env.NODE_ENV !== "production" && database === "money_manager" && process.env.ALLOW_PRODUCTION_DATABASE !== "true") {
+    throw new Error("O ambiente local não pode usar o banco de produção. Configure .env.local para money_manager_dev.")
+  }
   return value
 }
 

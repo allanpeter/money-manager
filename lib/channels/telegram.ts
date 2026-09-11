@@ -88,7 +88,7 @@ export function createTelegramChannel() {
       externalUserId,
       text,
     })
-    await send(conversationId, result.message, message.message_id)
+    if (!result.duplicate) await send(conversationId, result.message, message.message_id)
   }
 
   async function poll() {

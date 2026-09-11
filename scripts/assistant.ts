@@ -1,6 +1,11 @@
+import { loadEnvConfig } from "@next/env"
 import { createDiscordChannel } from "@/lib/channels/discord"
 import { createTelegramChannel } from "@/lib/channels/telegram"
 import { closeDatabase } from "@/lib/db"
+
+// Scripts executed with tsx are outside the Next.js runtime, so they must load
+// the same .env files explicitly before channel factories read process.env.
+loadEnvConfig(process.cwd())
 
 const channels = [
   process.env.DISCORD_BOT_TOKEN?.trim() ? createDiscordChannel() : null,

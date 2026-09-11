@@ -1,8 +1,11 @@
+import { loadEnvConfig } from "@next/env"
 import { eq } from "drizzle-orm"
 import { withWorkspace } from "@/lib/db"
 import { appSettings, financialProfiles } from "@/lib/db/schema"
 import { ensureFinancialProfileDefaults } from "@/lib/financial-profiles/service"
 import { LEGACY_WORKSPACE_ID } from "@/lib/auth/constants"
+
+loadEnvConfig(process.cwd())
 
 async function seed() {
   await withWorkspace(LEGACY_WORKSPACE_ID, async database => {

@@ -1,5 +1,8 @@
+import { loadEnvConfig } from "@next/env"
 import { migrate } from "drizzle-orm/node-postgres/migrator"
 import { closeDatabase, db } from "@/lib/db"
+
+loadEnvConfig(process.cwd())
 
 async function main() {
   try {

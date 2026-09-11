@@ -66,6 +66,9 @@ Banco oficial do homelab:
 Usuário, banco, backup e rotação da senha são administrados no repositório
 `infra`. Não crie um PostgreSQL local e não grave credenciais em `.env` ou Git.
 
+Para desenvolvimento existe uma base separada, `money_manager_dev`, com usuário
+e senha próprios. Ela é criada e administrada no mesmo repositório `infra`.
+
 ## Configurar OpenAI, Discord e Telegram
 
 1. Crie uma aplicação e um bot no Discord Developer Portal.
@@ -113,7 +116,7 @@ Para Telegram, crie o bot no `@BotFather` com `/newbot` e armazene o token como
 
 ```bash
 sops exec-env ../infra/ansible/secrets.enc.env \
-  'docker compose up -d --build'
+  'export DATABASE_URL="postgres://money_manager:${PG_MONEY_MANAGER_PASSWORD}@192.168.0.41:5432/money_manager"; export DATABASE_SSL=false; docker compose up -d --build'
 ```
 
 O Compose define três serviços:
@@ -127,7 +130,7 @@ Depois de cadastrar os segredos do Discord e OpenAI, ative o worker:
 
 ```bash
 sops exec-env ../infra/ansible/secrets.enc.env \
-  'docker compose --profile assistant up -d --build'
+  'export DATABASE_URL="postgres://money_manager:${PG_MONEY_MANAGER_PASSWORD}@192.168.0.41:5432/money_manager"; export DATABASE_SSL=false; docker compose --profile assistant up -d --build'
 ```
 
 O chat da própria interface não depende do worker `assistant`; ele funciona com
@@ -146,18 +149,19 @@ variáveis da OpenAI, configure as variáveis do Discord. O log deve conter
 `discord assistant ready as ...`. O Compose mantém serviços separados para
 facilitar desenvolvimento e operação local.
 
-Para validar a conexão local do bot sem enviar lembretes, execute:
+Para validar a conexão local do bot sem enviar lembretes, preencha antes tokens
+e IDs de **teste** no `.env.local`, então execute:
 
 ```bash
 ASSISTANT_DISABLE_REMINDERS=true DISCORD_ALLOWED_USER_IDS= \
-  node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/assistant.ts
+  node --env-file=.env.local node_modules/tsx/dist/cli.mjs scripts/assistant.ts
 ```
 
 Logs operacionais:
 
 ```bash
 sops exec-env ../infra/ansible/secrets.enc.env \
-  'docker compose logs -f app assistant'
+  'export DATABASE_URL="postgres://money_manager:${PG_MONEY_MANAGER_PASSWORD}@192.168.0.41:5432/money_manager"; export DATABASE_SSL=false; docker compose logs -f app assistant'
 ```
 
 ## Exemplos de comandos
@@ -189,23 +193,29 @@ alterados no PostgreSQL até existir uma tela de configurações.
 
 ## Desenvolvimento
 
-Para trabalhar na interface com hot reload, pare o container web para liberar a
-porta 3000 e inicie o Next.js. Banco e segredos continuam vindo do ambiente real:
+O desenvolvimento usa a base isolada `money_manager_dev`. Gere uma vez o
+arquivo `.env.local`: ele é ignorado pelo Git, recebe permissão `600`, lê a senha
+de desenvolvimento do SOPS e desativa bots e lembretes locais por padrão.
 
 ```bash
 npm install
-docker compose stop app
-sops exec-env ../infra/ansible/secrets.enc.env \
-  'export DATABASE_URL="postgres://money_manager:${PG_MONEY_MANAGER_PASSWORD}@192.168.0.41:5432/money_manager"; export DATABASE_SSL=false; npm run dev'
+npm run env:dev
+npm run db:migrate
+npm run db:seed
+npm run dev
 ```
 
 Abra `http://localhost:3000/cadastro` para criar uma conta ou `/login` se ela já
-existe. Para testar também Discord, Telegram e lembretes, execute em outro terminal:
+existe. Para rodar a aplicação em containers usando o mesmo banco isolado:
 
 ```bash
-sops exec-env ../infra/ansible/secrets.enc.env \
-  'export DATABASE_URL="postgres://money_manager:${PG_MONEY_MANAGER_PASSWORD}@192.168.0.41:5432/money_manager"; export DATABASE_SSL=false; npm run assistant'
+npm run docker:dev
 ```
+
+O comando `npm run assistant` permanece intencionalmente bloqueado no local,
+pois `.env.local` não contém tokens de Discord ou Telegram. Para testar um bot
+local, configure tokens de teste e um canal de teste nesse arquivo; nunca reuse
+os tokens de produção.
 
 Comandos úteis:
 
@@ -213,14 +223,18 @@ Comandos úteis:
 npm test
 npm run lint
 npm run build
+npm run env:dev
+npm run docker:dev
 npm run db:generate
 npm run db:migrate
 npm run db:seed
 npm run assistant
 ```
 
-Use o mesmo invólucro do SOPS para comandos que dependam do banco, OpenAI,
-Discord ou Telegram.
+Fora de produção, o cliente PostgreSQL recusa a base `money_manager`, salvo se
+`ALLOW_PRODUCTION_DATABASE=true` for definido explicitamente. No Coolify, mantenha
+`NODE_ENV=production` e configure `DATABASE_URL` com o banco oficial somente nas
+variáveis de runtime do serviço.
 
 ## Backup
 

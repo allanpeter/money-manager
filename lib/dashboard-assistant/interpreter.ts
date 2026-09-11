@@ -1,5 +1,6 @@
 import OpenAI from "openai"
 import { EMPTY_DASHBOARD_ACTION, type DashboardAction, type DashboardAssistantContext, type DashboardInterpretation, type PendingDashboardAction } from "./types"
+import type { DashboardAssistantPersona } from "./persona"
 
 const actionProperties = {
   kind: { type: "string", enum: ["chat", "create_wallet", "add_income", "add_expense", "add_recurring_income", "add_recurring_expense", "add_card_purchase", "pay_bill", "query_summary", "query_cards", "list_wallets", "unknown"] },
@@ -35,9 +36,12 @@ const schema = {
   required: ["actions", "reply"],
 } as const
 
-function instructions(today: string) {
+function instructions(today: string, persona: DashboardAssistantPersona) {
+  const tone = { warm: "acolhedor, próximo e respeitoso", balanced: "natural, claro e equilibrado", direct: "direto, objetivo e educado" }[persona.tone]
+  const detail = { brief: "respostas curtas, de uma ou duas frases", balanced: "respostas com o contexto necessário, sem excesso", detailed: "respostas explicativas quando isso ajudar a pessoa a decidir" }[persona.verbosity]
   return `Você interpreta mensagens em português para um dashboard financeiro pessoal.
 Retorne apenas o JSON estruturado. A data atual é ${today}.
+Na conversa, fale com ${persona.preferredName || "a pessoa"}. Seu tom deve ser ${tone}; prefira ${detail}. Você é um assistente de IA, não uma pessoa, e não deve alegar emoções, memória ou ações que não possui.
 Cada conversa está vinculada a um único usuário e workspace; use exclusivamente as carteiras fornecidas no contexto e nunca exponha IDs internos.
 Nunca invente carteira, valor, descrição ou mês. Valores monetários devem ser convertidos para centavos inteiros: R$ 12,34 = 1234.
 Retorne uma ação por lançamento independente. Se o usuário pedir aluguel e condomínio, retorne duas ações; nunca some valores, nunca junte descrições e nunca descarte um lançamento.
@@ -51,6 +55,7 @@ Use pay_bill para quitar uma conta ou fatura do mês (“paguei o aluguel”, �
 Use query_cards para perguntas sobre cartões e faturas (“quanto está a fatura?”, “quais cartões tenho?”, “o que tem na fatura do Nubank?”).
 Use add_expense com paymentMethod credit apenas para uma despesa avulsa sem cartão cadastrado.
 Use query_summary para saldo, receitas ou despesas; se o usuário não citar carteira, a consulta é consolidada. Use list_wallets para listar as carteiras.
+Perguntas como “como estão minhas contas?”, “como está minha vida financeira?”, “me dê um resumo” ou “qual é minha situação financeira?” são consultas reais: use query_summary mesmo quando vierem acompanhadas de “oi”, “bom dia” ou outra saudação. Nunca responda apenas que pode consultar esses dados.
 Para lançamentos e criação, deixe reply vazio: o sistema fará perguntas e pedirá confirmação. Para consultas, deixe os campos não necessários nulos.
 walletId, cardId e billId são reservados ao sistema e devem sempre ser null. Não preencha walletName se o usuário não citou explicitamente uma carteira, mesmo se existir apenas uma disponível. Se o usuário responder uma carteira para um lote pendente, repita essa carteira em cada ação do lote.
 Se o usuário não informar mês, deixe monthId null; o sistema aplicará o mês atual.
@@ -62,6 +67,7 @@ export async function interpretDashboardMessage(input: {
   today: string
   context: DashboardAssistantContext
   pending: PendingDashboardAction | null
+  persona: DashboardAssistantPersona
 }): Promise<DashboardInterpretation> {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error("OPENAI_API_KEY não configurada")
@@ -69,7 +75,7 @@ export async function interpretDashboardMessage(input: {
   const response = await client.responses.create({
     model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
     store: false,
-    instructions: instructions(input.today),
+    instructions: instructions(input.today, input.persona),
     input: JSON.stringify({
       mensagem: input.text,
       acoesPendentes: input.pending?.actions ?? null,

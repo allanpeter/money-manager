@@ -50,6 +50,20 @@
       "when": 1788048000000,
       "tag": "0006_personal_details",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788134400000,
+      "tag": "0007_c6_invoice_credits",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788220800000,
+      "tag": "0008_assistant_preferences",
+      "breakpoints": true
     }
   ]
 }

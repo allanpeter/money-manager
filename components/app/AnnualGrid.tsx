@@ -46,6 +46,7 @@ export function AnnualGrid() {
   const [undo, setUndo] = useState<UndoState | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showC6Import, setShowC6Import] = useState(false)
   const [showProfiles, setShowProfiles] = useState(false)
   const undoTimer = useRef<number | undefined>(undefined)
 
@@ -125,7 +126,7 @@ export function AnnualGrid() {
   const today = grid?.today ?? dateId(new Date())
 
   return <section className="space-y-4">
-    <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-5"><div><h2 className="text-lg font-semibold text-white">Contas a pagar</h2><p className="mt-1 text-sm text-zinc-500">Escolha um perfil ou consulte o consolidado. Verde significa resolvida.</p></div><div className="flex flex-wrap gap-2"><select value={profileId} onChange={event => setProfileId(event.target.value)} className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"><option value="all">Consolidado</option>{grid?.profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select><button onClick={() => setShowProfiles(true)} className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-zinc-500"><FolderPlus className="h-4 w-4" />Perfis</button><button onClick={() => setShowImport(true)} className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-zinc-500"><FileUp className="h-4 w-4" />Importar XLSX</button><button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-400"><Plus className="h-4 w-4" />Nova conta</button></div></header>
+    <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-5"><div><h2 className="text-lg font-semibold text-white">Contas a pagar</h2><p className="mt-1 text-sm text-zinc-500">Escolha um perfil ou consulte o consolidado. Verde significa resolvida.</p></div><div className="flex flex-wrap gap-2"><select value={profileId} onChange={event => setProfileId(event.target.value)} className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"><option value="all">Consolidado</option>{grid?.profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select><button onClick={() => setShowProfiles(true)} className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-zinc-500"><FolderPlus className="h-4 w-4" />Perfis</button><button onClick={() => setShowC6Import(true)} className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-zinc-500"><FileUp className="h-4 w-4" />Importar fatura C6</button><button onClick={() => setShowImport(true)} className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-zinc-500"><FileUp className="h-4 w-4" />Importar XLSX</button><button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-400"><Plus className="h-4 w-4" />Nova conta</button></div></header>
     {undo && <div className="flex items-center justify-between gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100"><span>Ocorrência atualizada.</span><button onClick={undoLast} className="inline-flex items-center gap-1 font-medium hover:text-white"><Undo2 className="h-4 w-4" />Desfazer</button></div>}
     {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
     <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2"><button onClick={() => setYear(value => value - 1)} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white" aria-label="Ano anterior"><ChevronLeft className="h-4 w-4" /></button><strong className="tabular-nums text-white">{year}</strong><button onClick={() => setYear(value => value + 1)} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white" aria-label="Próximo ano"><ChevronRight className="h-4 w-4" /></button></div>
@@ -134,6 +135,7 @@ export function AnnualGrid() {
     {showProfiles && <ProfileManager onClose={() => setShowProfiles(false)} onCreated={async profile => { setProfileId(profile.id); setShowProfiles(false); await load() }} />}
     {showAdd && grid && <AccountForm grid={grid} selectedProfileId={profileId === "all" ? null : profileId} onClose={() => setShowAdd(false)} onSaved={async () => { setShowAdd(false); await load() }} />}
     {showImport && grid && <ImportForm grid={grid} selectedProfileId={profileId === "all" ? null : profileId} onClose={() => setShowImport(false)} onImported={async () => { setShowImport(false); await load() }} />}
+    {showC6Import && grid && <C6InvoiceImportForm grid={grid} selectedProfileId={profileId === "all" ? null : profileId} onClose={() => setShowC6Import(false)} onImported={async () => { setShowC6Import(false); await load() }} />}
   </section>
 }
 
@@ -234,6 +236,55 @@ function AccountForm({ grid, selectedProfileId, onClose, onSaved }: { grid: Acco
     await onSaved()
   }
   return <div className="rounded-2xl border border-cyan-500/30 bg-zinc-900 p-5"><div className="mb-4 flex justify-between"><h3 className="font-semibold">Nova conta</h3><button type="button" onClick={onClose} className="text-sm text-zinc-400">Cancelar</button></div><form onSubmit={submit} className="grid gap-3 sm:grid-cols-2"><select value={profileId} onChange={event => setProfileId(event.target.value)} required className="rounded-lg bg-zinc-800 px-3 py-2 sm:col-span-2"><option value="" disabled>Selecione o perfil financeiro</option>{grid.profiles.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><input name="name" required placeholder="Nome da conta" className="rounded-lg bg-zinc-800 px-3 py-2" /><input name="amount" required inputMode="decimal" placeholder="Valor previsto (R$)" className="rounded-lg bg-zinc-800 px-3 py-2" /><select name="walletId" key={`wallet:${profileId}`} defaultValue={wallets[0]?.id} required className="rounded-lg bg-zinc-800 px-3 py-2">{wallets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select name="categoryId" key={`category:${profileId}`} defaultValue={categories[0]?.id} required className="rounded-lg bg-zinc-800 px-3 py-2">{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><input name="dueDay" type="number" min="1" max="31" placeholder="Dia de vencimento" className="rounded-lg bg-zinc-800 px-3 py-2" /><input name="closingDay" type="number" min="1" max="31" placeholder="Fechamento (cartão)" className="rounded-lg bg-zinc-800 px-3 py-2" /><input name="startMonth" type="month" defaultValue={`${grid.year}-01`} required className="rounded-lg bg-zinc-800 px-3 py-2" /><select name="nature" className="rounded-lg bg-zinc-800 px-3 py-2"><option value="fixed">Fixa</option><option value="variable">Variável</option><option value="installment">Parcelada</option><option value="one_off">Avulsa</option></select><select name="accountType" className="rounded-lg bg-zinc-800 px-3 py-2"><option value="regular">Conta normal</option><option value="credit_card">Fatura de cartão</option></select><input name="installments" type="number" min="1" placeholder="Parcelas (somente parcelada)" className="rounded-lg bg-zinc-800 px-3 py-2" /><button type="submit" disabled={saving || !profileId} className="rounded-lg bg-cyan-500 px-3 py-2 font-semibold text-zinc-950 disabled:opacity-50">{saving ? "Salvando…" : "Salvar conta"}</button>{message && <p className="text-sm text-red-300 sm:col-span-2">{message}</p>}</form></div>
+}
+
+interface C6Preview {
+  cards: { lastFour: string; entryCount: number; creditCount: number; totalCents: number }[]
+  paymentCount: number
+  issueCount: number
+  issues: { lineNumber: number; reason: string }[]
+}
+
+function C6InvoiceImportForm({ grid, selectedProfileId, onClose, onImported }: { grid: AccountsGrid; selectedProfileId: string | null; onClose: () => void; onImported: () => Promise<void> }) {
+  const [profileId, setProfileId] = useState(selectedProfileId ?? "")
+  const [referenceMonth, setReferenceMonth] = useState(grid.today.slice(0, 7))
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<C6Preview | null>(null)
+  const [mappings, setMappings] = useState<Record<string, string>>({})
+  const [message, setMessage] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const cards = grid.accounts.filter(account => account.profileId === profileId && account.accountType === "credit_card" && !account.archivedAt)
+  const fullyMapped = !!preview && preview.cards.every(card => mappings[card.lastFour])
+
+  async function previewFile(nextFile: File | null) {
+    setFile(nextFile); setPreview(null); setMappings({}); setMessage(null)
+    if (!nextFile) return
+    setLoading(true)
+    const form = new FormData(); form.set("file", nextFile)
+    try {
+      const response = await fetch("/api/accounts/import/c6-invoice/preview", { method: "POST", body: form })
+      const data = await response.json() as C6Preview & { error?: string }
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível ler o arquivo.")
+      setPreview(data)
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível ler o arquivo.") } finally { setLoading(false) }
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!file || !preview || !fullyMapped) return
+    setLoading(true); setMessage(null)
+    const form = new FormData()
+    form.set("file", file); form.set("profileId", profileId); form.set("referenceMonth", referenceMonth); form.set("mappings", JSON.stringify(mappings))
+    try {
+      const response = await fetch("/api/accounts/import/c6-invoice", { method: "POST", body: form })
+      const data = await response.json() as { error?: string; cards?: unknown[]; items?: number; paymentRowsSkipped?: number }
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível importar a fatura.")
+      setMessage(`Importadas ${data.items ?? 0} compras. ${data.paymentRowsSkipped ?? 0} pagamentos de fatura foram ignorados.`)
+      await onImported()
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível importar a fatura.") } finally { setLoading(false) }
+  }
+
+  return <div className="rounded-2xl border border-cyan-500/30 bg-zinc-900 p-5"><div className="mb-2 flex justify-between gap-3"><div><h3 className="font-semibold">Importar fatura C6</h3><p className="mt-1 text-sm text-zinc-500">Revise e vincule cada final de cartão antes de gravar as compras.</p></div><button type="button" onClick={onClose} className="text-sm text-zinc-400">Fechar</button></div><form onSubmit={submit} className="grid gap-3 sm:grid-cols-2"><select value={profileId} onChange={event => { setProfileId(event.target.value); setMappings({}) }} required className="rounded-lg bg-zinc-800 px-3 py-2"><option value="" disabled>Selecione o perfil financeiro</option>{grid.profiles.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><input type="month" value={referenceMonth} onChange={event => setReferenceMonth(event.target.value)} required className="rounded-lg bg-zinc-800 px-3 py-2" /><input type="file" accept=".csv,text/csv" onChange={event => void previewFile(event.target.files?.[0] ?? null)} required className="rounded-lg bg-zinc-800 px-3 py-2 sm:col-span-2" />{loading && <p className="text-sm text-zinc-400 sm:col-span-2">Processando arquivo…</p>}{preview && <div className="space-y-3 rounded-xl border border-zinc-700 p-3 sm:col-span-2"><p className="text-sm text-zinc-300">{preview.paymentCount} pagamento(s) de fatura ignorado(s). {preview.issueCount ? `${preview.issueCount} linha(s) inválida(s).` : "Nenhuma linha inválida."}</p>{preview.cards.map(card => <div key={card.lastFour} className="grid gap-2 rounded-lg bg-zinc-800/70 p-3 sm:grid-cols-[1fr_1fr]"><div><p className="font-medium">Cartão •••• {card.lastFour}</p><p className="text-xs text-zinc-400">{card.entryCount} lançamento(s), {card.creditCount} estorno(s) · {formatCents(card.totalCents)}</p></div><select value={mappings[card.lastFour] ?? ""} onChange={event => setMappings(current => ({ ...current, [card.lastFour]: event.target.value }))} required className="rounded-lg bg-zinc-950 px-3 py-2 text-sm"><option value="" disabled>Vincular à conta de cartão</option>{cards.map(account => <option key={account.id} value={account.id}>{account.name} · {account.walletName}</option>)}</select></div>)}{preview.issues.length > 0 && <ul className="text-xs text-amber-200">{preview.issues.map(issue => <li key={issue.lineNumber}>Linha {issue.lineNumber}: {issue.reason}</li>)}</ul>}</div>}{!cards.length && profileId && <p className="text-sm text-amber-200 sm:col-span-2">Cadastre ao menos uma conta do tipo cartão nesse perfil antes de importar.</p>}<button type="submit" disabled={loading || !file || !fullyMapped || preview?.issueCount !== 0 || !cards.length} className="rounded-lg bg-cyan-400 px-3 py-2 font-semibold text-zinc-950 disabled:opacity-50 sm:col-span-2">Confirmar importação</button>{message && <p className="text-sm text-zinc-300 sm:col-span-2">{message}</p>}</form></div>
 }
 
 function ImportForm({ grid, selectedProfileId, onClose, onImported }: { grid: AccountsGrid; selectedProfileId: string | null; onClose: () => void; onImported: () => Promise<void> }) {

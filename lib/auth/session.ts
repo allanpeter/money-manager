@@ -18,6 +18,10 @@ export interface AuthContext {
   userId: string
   userName: string
   phone: string | null
+  assistantPreferredName: string | null
+  assistantTone: "warm" | "balanced" | "direct"
+  assistantVerbosity: "brief" | "balanced" | "detailed"
+  assistantGreetings: boolean
   email: string
   workspaceId: string
   workspaceName: string
@@ -31,6 +35,10 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     userId: users.id,
     userName: users.name,
     phone: users.phone,
+    assistantPreferredName: users.assistantPreferredName,
+    assistantTone: users.assistantTone,
+    assistantVerbosity: users.assistantVerbosity,
+    assistantGreetings: users.assistantGreetings,
     email: users.email,
     workspaceId: workspaces.id,
     workspaceName: workspaces.name,

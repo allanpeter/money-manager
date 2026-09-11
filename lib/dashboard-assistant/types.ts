@@ -1,5 +1,6 @@
 import type { ExpenseType, PaymentMethod } from "@/lib/types"
 import type { PurchaseAmountMode } from "@/lib/credit-cards"
+import type { C6InvoiceCardSummary, C6InvoiceEntry } from "@/lib/accounts/import-c6-invoice"
 
 export type DashboardActionKind =
   | "chat"
@@ -51,6 +52,20 @@ export interface PendingDashboardAction {
   operationId: string
 }
 
+/** Parsed data is persisted only until the user confirms or cancels its import. */
+export interface PendingC6InvoiceImport {
+  type: "c6_invoice_import"
+  stage: "mapping" | "ready"
+  operationId: string
+  filename: string
+  checksum: string
+  referenceMonth: string
+  entries: C6InvoiceEntry[]
+  cards: C6InvoiceCardSummary[]
+  paymentCount: number
+  mappings: Record<string, string>
+}
+
 export interface DashboardAssistantInput {
   userId: string
   workspaceId: string
@@ -66,6 +81,8 @@ export interface DashboardAssistantResult {
   message: string
   status: "pending" | "executed" | "rejected" | "failed"
   storeUpdated?: boolean
+  /** True when the idempotency key was already handled by another worker. */
+  duplicate?: boolean
 }
 
 export interface DashboardAssistantContext {

@@ -1,9 +1,10 @@
 import { Client, Events, GatewayIntentBits, Partials, type Message, type SendableChannels } from "discord.js"
-import { handleDashboardAssistantMessage } from "@/lib/dashboard-assistant/service"
+import { handleDashboardAssistantMessage, handleDashboardInvoiceAttachment } from "@/lib/dashboard-assistant/service"
 import { bootstrapExternalIdentity, claimIdentityLink, listReminderTargets, resolveExternalIdentity } from "@/lib/auth/identities"
 import { dispatchDueReminders } from "@/lib/reminders/service"
 
 const MAX_MESSAGE_LENGTH = 1900
+const MAX_INVOICE_ATTACHMENT_SIZE = 5 * 1024 * 1024
 
 function required(name: string) {
   const value = process.env[name]?.trim()
@@ -35,6 +36,22 @@ async function sendChunks(channel: SendableChannels, message: string) {
   for (const chunk of chunks(message)) await channel.send({ content: chunk, allowedMentions: { parse: [] } })
 }
 
+async function downloadInvoiceAttachment(message: Message) {
+  if (message.attachments.size !== 1) throw new Error("Envie somente um arquivo por vez.")
+  const attachment = message.attachments.first()
+  if (!attachment) throw new Error("Não encontrei o arquivo anexado.")
+  if (!attachment.name) throw new Error("O anexo precisa ter um nome de arquivo.")
+  if (attachment.size > MAX_INVOICE_ATTACHMENT_SIZE) throw new Error("O arquivo deve ter no máximo 5 MB.")
+  const response = await fetch(attachment.url, { signal: AbortSignal.timeout(15_000) })
+  if (!response.ok) throw new Error("Não foi possível baixar o anexo do Discord.")
+  const length = Number(response.headers.get("content-length") ?? 0)
+  if (length > MAX_INVOICE_ATTACHMENT_SIZE) throw new Error("O arquivo deve ter no máximo 5 MB.")
+  const bytes = Buffer.from(await response.arrayBuffer())
+  if (!bytes.length) throw new Error("O arquivo está vazio.")
+  if (bytes.length > MAX_INVOICE_ATTACHMENT_SIZE) throw new Error("O arquivo deve ter no máximo 5 MB.")
+  return { filename: attachment.name, bytes }
+}
+
 export function createDiscordChannel() {
   const token = required("DISCORD_BOT_TOKEN")
   const allowedUsers = new Set((process.env.DISCORD_ALLOWED_USER_IDS ?? "").split(",").map(value => value.trim()).filter(Boolean))
@@ -64,7 +81,6 @@ export function createDiscordChannel() {
     if (message.author.bot) return
     if (commandChannelId && message.channelId !== commandChannelId && message.guildId) return
     const text = message.content.trim()
-    if (!text) return
 
     const linkMatch = text.match(/^\/?vincular\s+([a-z0-9-]+)$/i)
     if (linkMatch) {
@@ -96,6 +112,27 @@ export function createDiscordChannel() {
       return
     }
 
+    if (message.attachments.size) {
+      try {
+        const attachment = await downloadInvoiceAttachment(message)
+        const result = await handleDashboardInvoiceAttachment({
+          userId: identity.userId,
+          workspaceId: identity.workspaceId,
+          role: identity.role,
+          channel: "discord",
+          conversationKey: message.channelId,
+          externalMessageId: message.id,
+          externalUserId: message.author.id,
+          text,
+        }, attachment)
+        if (!result.duplicate) await reply(message, result.message)
+      } catch (error) {
+        await reply(message, error instanceof Error ? error.message : "Não foi possível ler o anexo.")
+      }
+      return
+    }
+    if (!text) return
+
     if ("sendTyping" in message.channel && typeof message.channel.sendTyping === "function") {
       await message.channel.sendTyping().catch(() => undefined)
     }
@@ -109,7 +146,9 @@ export function createDiscordChannel() {
       externalUserId: message.author.id,
       text,
     })
-    await reply(message, result.message)
+    // Discord may redeliver an event, or another worker may already own it.
+    // The database command key makes this idempotent; the duplicate stays silent.
+    if (!result.duplicate) await reply(message, result.message)
   }
 
   client.on(Events.MessageCreate, message => {

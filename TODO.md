@@ -120,3 +120,19 @@ qual parte faria sentido migrar.
 **Decidir:** vira módulo dentro deste app (mesmo login/workspace) ou continua
 separado? Se vier para cá, mapear o modelo de dados e se cabe no
 `financial_stores` ou precisa de tabelas próprias.
+
+## 9. Importadores de fatura além do CSV do C6
+
+**Hoje:** o Discord aceita um CSV de fatura do C6 como anexo. O fluxo mostra
+prévia, exige o vínculo do final do cartão a uma conta cadastrada e só grava
+após `sim`. O núcleo está em `lib/invoice-imports/registry.ts`, para que cada
+banco ou formato entre por um adaptador próprio, sem alterar o canal nem a
+persistência.
+
+**Futuro:** adicionar adaptadores para CSV/OFX/XLSX de outros bancos, PDF de
+fatura, print de fatura e foto de nota fiscal. PDF e imagem devem extrair dados
+em uma etapa separada e sempre exibir a prévia com confirmação humana antes de
+qualquer lançamento; nunca importar valores inferidos automaticamente.
+
+**Próximo passo:** escolher o próximo banco e coletar exemplos anonimizados de
+suas exportações para definir o parser e os testes de regressão.

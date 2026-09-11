@@ -2,12 +2,18 @@
 
 import { FormEvent, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Save, UserRound, WalletCards } from "lucide-react"
+import { Bot, Save, UserRound, WalletCards } from "lucide-react"
 import { useApp } from "./AppDataProvider"
 
 interface Props {
   initialName: string
   initialPhone: string | null
+  initialAssistantPreferences: {
+    preferredName: string | null
+    tone: "warm" | "balanced" | "direct"
+    verbosity: "brief" | "balanced" | "detailed"
+    greetings: boolean
+  }
 }
 
 function formatBrazilPhoneInput(value: string): string {
@@ -17,11 +23,15 @@ function formatBrazilPhoneInput(value: string): string {
   return `+${digits}`
 }
 
-export function PersonalSettings({ initialName, initialPhone }: Readonly<Props>) {
+export function PersonalSettings({ initialName, initialPhone, initialAssistantPreferences }: Readonly<Props>) {
   const app = useApp()
   const router = useRouter()
   const [name, setName] = useState(initialName)
   const [phone, setPhone] = useState(initialPhone ?? "")
+  const [assistantPreferredName, setAssistantPreferredName] = useState(initialAssistantPreferences.preferredName ?? "")
+  const [assistantTone, setAssistantTone] = useState(initialAssistantPreferences.tone)
+  const [assistantVerbosity, setAssistantVerbosity] = useState(initialAssistantPreferences.verbosity)
+  const [assistantGreetings, setAssistantGreetings] = useState(initialAssistantPreferences.greetings)
   const [taxIds, setTaxIds] = useState<Record<string, string>>(() => Object.fromEntries(
     app.wallets.map(wallet => [wallet.id, wallet.taxId ?? ""]),
   ))
@@ -43,7 +53,7 @@ export function PersonalSettings({ initialName, initialPhone }: Readonly<Props>)
       const response = await fetch("/api/account", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone }),
+        body: JSON.stringify({ name, phone, assistantPreferredName, assistantTone, assistantVerbosity, assistantGreetings }),
       })
       const result = await response.json() as { error?: string }
       if (!response.ok) throw new Error(result.error ?? "Não foi possível salvar os dados.")
@@ -80,6 +90,34 @@ export function PersonalSettings({ initialName, initialPhone }: Readonly<Props>)
             />
             <span className="mt-1 block text-xs text-zinc-600">Opcional. Informe DDD e número; o código +55 é preenchido automaticamente.</span>
           </label>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-300"><Bot className="h-5 w-5" /></div>
+          <div><h2 className="font-semibold text-white">Jeito de conversar</h2><p className="mt-1 text-sm text-zinc-500">Essas preferências alteram a comunicação, nunca as regras ou confirmações financeiras.</p></div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="text-sm text-zinc-300">Como o assistente deve chamar você
+            <input maxLength={60} value={assistantPreferredName} onChange={event => setAssistantPreferredName(event.target.value)} className="mt-1.5 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-white outline-none focus:border-emerald-500/50" placeholder="Ex.: Allan" />
+            <span className="mt-1 block text-xs text-zinc-600">Opcional. Se vazio, ele usa seu primeiro nome.</span>
+          </label>
+          <label className="text-sm text-zinc-300">Tom de conversa
+            <select value={assistantTone} onChange={event => setAssistantTone(event.target.value as typeof assistantTone)} className="mt-1.5 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-white outline-none focus:border-emerald-500/50">
+              <option value="warm">Acolhedor e próximo</option>
+              <option value="balanced">Equilibrado</option>
+              <option value="direct">Direto e objetivo</option>
+            </select>
+          </label>
+          <label className="text-sm text-zinc-300">Nível de explicação
+            <select value={assistantVerbosity} onChange={event => setAssistantVerbosity(event.target.value as typeof assistantVerbosity)} className="mt-1.5 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-white outline-none focus:border-emerald-500/50">
+              <option value="brief">Curto</option>
+              <option value="balanced">Equilibrado</option>
+              <option value="detailed">Explicativo</option>
+            </select>
+          </label>
+          <label className="flex items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-300"><input type="checkbox" checked={assistantGreetings} onChange={event => setAssistantGreetings(event.target.checked)} className="mt-0.5 h-4 w-4 accent-emerald-400" /><span><span className="font-medium text-zinc-200">Saudações por horário</span><span className="mt-1 block text-xs text-zinc-600">Permitir “bom dia”, “boa tarde” ou “boa noite” no primeiro contato do dia.</span></span></label>
         </div>
       </section>
 
