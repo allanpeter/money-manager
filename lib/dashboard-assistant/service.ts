@@ -1,8 +1,10 @@
-import { and, eq, isNull } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { currentMonthId } from "@/lib/months"
 import { withWorkspace } from "@/lib/db"
-import { accounts, assistantCommands, assistantSessions } from "@/lib/db/schema"
-import { importC6Invoice } from "@/lib/accounts/import-c6-invoice-service"
+import { assistantCommands, assistantSessions } from "@/lib/db/schema"
+import { loadFinancialStore } from "@/lib/financial-api/store"
+import { SKIP_CARD, listStoreCards, matchCardByLastFour, type StoreCardTarget } from "@/lib/invoice-imports/apply-to-store"
+import { importInvoiceIntoStore } from "@/lib/invoice-imports/import-service"
 import { parseInvoiceDocument } from "@/lib/invoice-imports/registry"
 import { prepareDashboardActions } from "./actions"
 import { interpretDashboardMessage, isCancellation, isConfirmation, mergeDashboardActions } from "./interpreter"
@@ -111,15 +113,27 @@ async function reserveCommand(input: DashboardAssistantInput, rawText: string): 
   }
 }
 
-interface C6ImportTarget { id: string; name: string; profileId: string }
+type C6ImportTarget = StoreCardTarget
 
 async function c6ImportTargets(workspaceId: string): Promise<C6ImportTarget[]> {
-  return withWorkspace(workspaceId, database => database.select({ id: accounts.id, name: accounts.name, profileId: accounts.profileId })
-    .from(accounts).where(and(eq(accounts.workspaceId, workspaceId), eq(accounts.accountType, "credit_card"), isNull(accounts.archivedAt))))
+  return listStoreCards(await loadFinancialStore(workspaceId))
+}
+
+function targetLabel(target: C6ImportTarget) {
+  return `${target.name}${target.lastFour ? ` •••• ${target.lastFour}` : ""}`
+}
+
+function isSkipAnswer(text: string) {
+  return ["ignorar", "ignora", "pular", "pula", "nenhum", "nenhuma", "deixa de fora"].includes(normalize(text))
 }
 
 function targetFromText(text: string, targets: C6ImportTarget[]) {
   const requested = normalize(text)
+  const digits = text.replace(/\D/g, "")
+  if (digits.length === 4) {
+    const byLastFour = targets.filter(target => target.lastFour === digits)
+    if (byLastFour.length === 1) return byLastFour[0]
+  }
   const matches = targets.filter(target => {
     const name = normalize(target.name)
     return requested === name || requested.includes(name) || name.includes(requested)
@@ -127,19 +141,27 @@ function targetFromText(text: string, targets: C6ImportTarget[]) {
   return matches.length === 1 ? matches[0] : null
 }
 
-function c6Preview(pending: PendingC6InvoiceImport, targets: C6ImportTarget[]) {
-  const cards = pending.cards.map(card => `•••• ${card.lastFour}: ${card.entryCount} compra(s), ${formatCents(card.totalCents)}`).join("\n")
-  const unmapped = pending.cards.find(card => !pending.mappings[card.lastFour])
-  if (unmapped) {
-    return `Li “${pending.filename}” para ${pending.referenceMonth}.\n${cards}\n\nQual cartão cadastrado corresponde ao final •••• ${unmapped.lastFour}? Responda com um destes nomes: ${targets.map(target => target.name).join(", ")}.`
-  }
-  return `Prévia da fatura de ${pending.referenceMonth}:\n${cards}\n\n${pending.paymentCount} pagamento(s) de fatura foram ignorados. Confirma a importação? Responda “sim” ou “cancelar”.`
+function cardLine(pending: PendingC6InvoiceImport, card: PendingC6InvoiceImport["cards"][number], targets: C6ImportTarget[]) {
+  const mapped = pending.mappings[card.lastFour]
+  const target = mapped && mapped !== SKIP_CARD ? targets.find(item => item.id === mapped) : null
+  const destination = mapped === SKIP_CARD ? " → ignorado" : target ? ` → ${targetLabel(target)}` : " → sem cartão correspondente"
+  return `•••• ${card.lastFour}: ${card.entryCount} compra(s), ${formatCents(card.totalCents)}${destination}`
 }
 
-function targetsForPending(pending: PendingC6InvoiceImport, targets: C6ImportTarget[]) {
-  const firstMappedId = Object.values(pending.mappings)[0]
-  const profileId = targets.find(target => target.id === firstMappedId)?.profileId
-  return profileId ? targets.filter(target => target.profileId === profileId) : targets
+function c6Preview(pending: PendingC6InvoiceImport, targets: C6ImportTarget[]) {
+  const cards = pending.cards.map(card => cardLine(pending, card, targets)).join("\n")
+  const unmapped = pending.cards.find(card => !pending.mappings[card.lastFour])
+  if (unmapped) {
+    return `Li “${pending.filename}” para ${pending.referenceMonth}.\n${cards}\n\nNão tenho cartão cadastrado com o final •••• ${unmapped.lastFour}. A qual cartão ele pertence? Responda com um destes nomes — ${targets.map(targetLabel).join(", ")} — ou “ignorar” para deixar esse final de fora.`
+  }
+  const ignored = pending.cards.filter(card => pending.mappings[card.lastFour] === SKIP_CARD).length
+  const ignoredLine = ignored ? ` ${ignored} final(is) ficaram de fora.` : ""
+  return `Prévia da fatura de ${pending.referenceMonth}:\n${cards}\n\n${pending.paymentCount} pagamento(s) de fatura foram ignorados.${ignoredLine} Confirma a importação? Responda “sim” ou “cancelar”.`
+}
+
+/** Every registered card is eligible: the store has no profile to narrow down. */
+function targetsForPending(_pending: PendingC6InvoiceImport, targets: C6ImportTarget[]) {
+  return targets
 }
 
 export async function handleDashboardInvoiceAttachment(input: DashboardAssistantInput, attachment: { filename: string; bytes: Buffer }): Promise<DashboardAssistantResult> {
@@ -159,8 +181,14 @@ export async function handleDashboardInvoiceAttachment(input: DashboardAssistant
     if (document.source !== "c6") throw new Error("Documento de fatura não reconhecido.")
     if (document.parsed.issues.length) throw new Error(`O CSV possui ${document.parsed.issues.length} linha(s) inválida(s). Corrija o arquivo antes de importar.`)
     const targets = await c6ImportTargets(input.workspaceId)
-    if (!targets.length) throw new Error("Cadastre ao menos uma conta do tipo cartão antes de importar a fatura.")
-    const mappings = document.parsed.cards.length === 1 && targets.length === 1 ? { [document.parsed.cards[0].lastFour]: targets[0].id } : {}
+    if (!targets.length) throw new Error("Você ainda não tem cartões cadastrados. Abra o Money Manager, cadastre o cartão em Cartões → Novo cartão (informando os quatro últimos dígitos) e reenvie o arquivo.")
+    // A fatura do C6 traz um grupo por cartão adicional; o final impresso no CSV
+    // casa com os quatro dígitos do cartão cadastrado, então só o que sobra é perguntado.
+    const mappings = Object.fromEntries(document.parsed.cards.flatMap(card => {
+      // Só um cartão cadastrado e sem os dígitos preenchidos: não há alternativa a oferecer.
+      const match = matchCardByLastFour(targets, card.lastFour) ?? (targets.length === 1 && !targets[0].lastFour ? targets[0] : null)
+      return match ? [[card.lastFour, match.id] as const] : []
+    }))
     const pending: PendingC6InvoiceImport = {
       type: "c6_invoice_import",
       stage: Object.keys(mappings).length === document.parsed.cards.length ? "ready" : "mapping",
@@ -205,32 +233,44 @@ export async function handleDashboardAssistantMessage(input: DashboardAssistantI
         return { ...result, status: "rejected" }
       }
       if (documentPending.stage === "ready" && isConfirmation(text)) {
-        const mappedTargets = Object.values(documentPending.mappings).map(id => targets.find(target => target.id === id)).filter((target): target is C6ImportTarget => Boolean(target))
-        const profileIds = new Set(mappedTargets.map(target => target.profileId))
-        if (mappedTargets.length !== Object.keys(documentPending.mappings).length || profileIds.size !== 1) throw new Error("Os cartões selecionados não pertencem ao mesmo perfil financeiro.")
-        const imported = await importC6Invoice({
+        const chosen = Object.values(documentPending.mappings).filter(id => id !== SKIP_CARD)
+        if (chosen.some(id => !targets.some(target => target.id === id))) throw new Error("Um dos cartões escolhidos não existe mais. Reenvie a fatura.")
+        if (!chosen.length) throw new Error("Todos os finais da fatura foram ignorados; não há o que importar.")
+        const imported = await importInvoiceIntoStore({
           workspaceId: input.workspaceId,
-          userId: input.userId,
           filename: documentPending.filename,
-          profileId: [...profileIds][0],
+          checksum: documentPending.checksum,
           referenceMonth: documentPending.referenceMonth,
+          entries: documentPending.entries,
           mappings: documentPending.mappings,
-          parsed: { checksum: documentPending.checksum, entries: documentPending.entries, cards: documentPending.cards, paymentCount: documentPending.paymentCount, issues: [] },
         })
-        const result = { message: `Fatura importada: ${imported.items} compra(s) em ${imported.cards.length} cartão(ões). ${imported.paymentRowsSkipped} pagamento(s) foram ignorados.`, storeUpdated: true }
+        const detail = imported.perCard.filter(card => card.imported).map(card => `${card.cardName} (${card.imported})`).join(", ")
+        const duplicates = imported.duplicates ? ` ${imported.duplicates} compra(s) já estavam registradas e foram puladas.` : ""
+        const result = { message: `Fatura importada: ${imported.imported} compra(s) em ${detail}.${duplicates} ${documentPending.paymentCount} pagamento(s) de fatura foram ignorados.`, storeUpdated: true }
         await savePending(input, null)
         await updateCommand(input.workspaceId, command.id, { status: "executed", result })
         return { ...result, status: "executed" }
       }
       if (documentPending.stage === "mapping") {
         const eligible = targetsForPending(documentPending, targets)
+        const card = documentPending.cards.find(item => !documentPending.mappings[item.lastFour])
+        if (card && isSkipAnswer(text)) {
+          const next: PendingC6InvoiceImport = {
+            ...documentPending,
+            mappings: { ...documentPending.mappings, [card.lastFour]: SKIP_CARD },
+            stage: documentPending.cards.every(item => item.lastFour === card.lastFour || documentPending.mappings[item.lastFour]) ? "ready" : "mapping",
+          }
+          const result = { message: c6Preview(next, targetsForPending(next, targets)) }
+          await savePending(input, next)
+          await updateCommand(input.workspaceId, command.id, { status: "pending", result })
+          return { ...result, status: "pending" }
+        }
         const target = targetFromText(text, eligible)
         if (!target) {
           const result = { message: c6Preview(documentPending, eligible) }
           await updateCommand(input.workspaceId, command.id, { status: "pending", result })
           return { ...result, status: "pending" }
         }
-        const card = documentPending.cards.find(item => !documentPending.mappings[item.lastFour])
         if (!card) throw new Error("Não encontrei cartão pendente para vincular.")
         const next: PendingC6InvoiceImport = {
           ...documentPending,
