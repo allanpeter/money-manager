@@ -28,15 +28,17 @@ export async function importInvoiceIntoStore(input: InvoiceStoreImportInput): Pr
       .where(and(eq(importBatches.workspaceId, input.workspaceId), eq(importBatches.checksum, input.checksum))).limit(1)
     if (duplicate) throw new Error("Este arquivo já foi importado antes.")
 
-    const [row] = await transaction.select({ data: financialStores.data }).from(financialStores)
+    const [row] = await transaction.select({ data: financialStores.data, revision: financialStores.revision }).from(financialStores)
       .where(eq(financialStores.workspaceId, input.workspaceId)).limit(1)
-    if (!isStore(row?.data)) throw new Error("Não encontrei seus dados financeiros para gravar a fatura.")
+    if (!row || !isStore(row.data)) throw new Error("Não encontrei seus dados financeiros para gravar a fatura.")
 
     const result = applyInvoiceToStore(row.data, { entries: input.entries, mappings: input.mappings })
     if (!result.imported) throw new Error("Nenhuma compra nova para importar: tudo já estava registrado.")
 
-    await transaction.insert(financialStores).values({ workspaceId: input.workspaceId, data: result.store, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: financialStores.workspaceId, set: { data: result.store, updatedAt: new Date() } })
+    const [saved] = await transaction.update(financialStores).set({ data: result.store, revision: row.revision + 1, updatedAt: new Date() })
+      .where(and(eq(financialStores.workspaceId, input.workspaceId), eq(financialStores.revision, row.revision)))
+      .returning({ revision: financialStores.revision })
+    if (!saved) throw new Error("Seus dados financeiros foram alterados em outra sessão. Reenvie a fatura para evitar perda de dados.")
     await transaction.insert(importBatches).values({
       workspaceId: input.workspaceId,
       filename: input.filename,

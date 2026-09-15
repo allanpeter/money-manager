@@ -15,6 +15,14 @@ export interface StorageAdapter {
   save(store: MultiWalletStore): Promise<void>
 }
 
+/** The server rejected a stale full-store write, protecting newer data from overwrite. */
+export class StorageConflictError extends Error {
+  constructor() {
+    super("Seus dados foram alterados em outra sessão.")
+    this.name = "StorageConflictError"
+  }
+}
+
 const STORE_KEY = "money-manager-store"
 const LEGACY_KEY = "money-manager-data"
 
@@ -44,13 +52,16 @@ export const localStorageAdapter: StorageAdapter = {
 /** Blob pré-autenticação, sem dono. Só pode ser adotado uma única vez. */
 const OWNER_KEY = "money-manager-cache-owner"
 
-async function fetchStore(): Promise<{ data: unknown | null; workspaceId: string }> {
+async function fetchStore(): Promise<{ data: unknown | null; revision: number; workspaceId: string }> {
   const response = await fetch("/api/financial-store", { cache: "no-store" })
   if (!response.ok) throw new Error("Falha ao carregar dados financeiros.")
-  const result = await response.json() as { data?: unknown; workspaceId?: string }
-  if (typeof result.workspaceId !== "string") throw new Error("Resposta inválida do servidor.")
-  return { data: result.data ?? null, workspaceId: result.workspaceId }
+  const result = await response.json() as { data?: unknown; revision?: unknown; workspaceId?: string }
+  const revision = result.revision
+  if (typeof result.workspaceId !== "string" || typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 0) throw new Error("Resposta inválida do servidor.")
+  return { data: result.data ?? null, revision, workspaceId: result.workspaceId }
 }
+
+let databaseStoreRevision = 0
 
 /**
  * Fonte única e autenticada dos dados financeiros.
@@ -65,7 +76,8 @@ async function fetchStore(): Promise<{ data: unknown | null; workspaceId: string
 export const databaseStorageAdapter: StorageAdapter = {
   async load() {
     if (typeof window === "undefined") return null
-    const { data, workspaceId } = await fetchStore()
+    const { data, revision, workspaceId } = await fetchStore()
+    databaseStoreRevision = revision
     if (data) return data
 
     const owner = localStorage.getItem(OWNER_KEY)
@@ -81,8 +93,13 @@ export const databaseStorageAdapter: StorageAdapter = {
     const response = await fetch("/api/financial-store", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: store }),
+      body: JSON.stringify({ data: store, revision: databaseStoreRevision }),
     })
+    if (response.status === 409) throw new StorageConflictError()
     if (!response.ok) throw new Error("Falha ao salvar dados financeiros.")
+    const result = await response.json() as { revision?: unknown }
+    const revision = result.revision
+    if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 0) throw new Error("Resposta inválida do servidor.")
+    databaseStoreRevision = revision
   },
 }

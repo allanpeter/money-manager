@@ -1,7 +1,7 @@
 import { executeDashboardAction } from "@/lib/dashboard-assistant/actions"
 import { billPayment, billsForMonth } from "@/lib/bills"
 import { currentMonthId } from "@/lib/months"
-import { loadFinancialStore, saveFinancialStore } from "./store"
+import { loadFinancialStore, loadFinancialStoreSnapshot, saveFinancialStore } from "./store"
 import type { DashboardAction, DashboardAssistantContext } from "@/lib/dashboard-assistant/types"
 
 const executableKinds = new Set([
@@ -72,17 +72,17 @@ export async function getFinancialAssistantContext(workspaceId: string): Promise
 /** The only financial operation gateway available to the assistant runtime. */
 export async function executeFinancialAssistantAction(workspaceId: string, action: DashboardAction) {
   if (!isFinancialAssistantAction(action)) throw new Error("Ação financeira não autorizada.")
-  const store = await loadFinancialStore(workspaceId)
-  const result = executeDashboardAction(store, action)
-  if (result.changed) await saveFinancialStore(workspaceId, result.store)
+  const snapshot = await loadFinancialStoreSnapshot(workspaceId)
+  const result = executeDashboardAction(snapshot.store, action)
+  if (result.changed) await saveFinancialStore(workspaceId, result.store, snapshot.revision)
   return result
 }
 
 /** Executes a validated batch against one in-memory store and persists it once. */
 export async function executeFinancialAssistantActions(workspaceId: string, actions: DashboardAction[]) {
   if (!actions.length || !actions.every(isFinancialAssistantAction)) throw new Error("Ação financeira não autorizada.")
-  const store = await loadFinancialStore(workspaceId)
-  const result = actions.reduce((current, action) => executeDashboardAction(current.store, action), { store, message: "", changed: false })
-  if (result.changed) await saveFinancialStore(workspaceId, result.store)
+  const snapshot = await loadFinancialStoreSnapshot(workspaceId)
+  const result = actions.reduce((current, action) => executeDashboardAction(current.store, action), { store: snapshot.store, message: "", changed: false })
+  if (result.changed) await saveFinancialStore(workspaceId, result.store, snapshot.revision)
   return result
 }

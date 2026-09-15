@@ -64,6 +64,13 @@
       "when": 1788220800000,
       "tag": "0008_assistant_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789516451935,
+      "tag": "0009_financial_store_revision",
+      "breakpoints": true
     }
   ]
 }

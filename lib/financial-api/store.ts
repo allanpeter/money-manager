@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { DEFAULT_DATA } from "@/lib/defaults"
 import { currentMonthId } from "@/lib/months"
 import { financialStores } from "@/lib/db/schema"
@@ -8,6 +8,18 @@ import type { AppData, MultiWalletStore, Wallet } from "@/lib/types"
 import { COLORS, DEFAULT_CURRENCY, DEFAULT_LOCALE } from "@/lib/utils"
 
 const SCHEMA_VERSION = 6
+
+export class FinancialStoreConflictError extends Error {
+  constructor() {
+    super("Os dados financeiros foram alterados por outra sessão.")
+    this.name = "FinancialStoreConflictError"
+  }
+}
+
+export interface FinancialStoreSnapshot {
+  store: MultiWalletStore
+  revision: number
+}
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -32,21 +44,31 @@ function isStore(value: unknown): value is MultiWalletStore {
   return Array.isArray(store.wallets) && typeof store.activeMonthId === "string" && typeof store.activeWalletId === "string"
 }
 
-export async function loadFinancialStore(workspaceId: string): Promise<MultiWalletStore> {
-  const [row] = await withWorkspace(workspaceId, database => database.select({ data: financialStores.data })
+export async function loadFinancialStoreSnapshot(workspaceId: string): Promise<FinancialStoreSnapshot> {
+  const [row] = await withWorkspace(workspaceId, database => database.select({ data: financialStores.data, revision: financialStores.revision })
     .from(financialStores).where(eq(financialStores.workspaceId, workspaceId)).limit(1))
-  return isStore(row?.data) ? row.data : createFinancialStore()
+  return { store: isStore(row?.data) ? row.data : createFinancialStore(), revision: row?.revision ?? 0 }
 }
 
-export async function saveFinancialStore(workspaceId: string, store: MultiWalletStore) {
-  await withWorkspace(workspaceId, database => database.insert(financialStores).values({
-    workspaceId,
-    data: store,
-    updatedAt: new Date(),
-  }).onConflictDoUpdate({
-    target: financialStores.workspaceId,
-    set: { data: store, updatedAt: new Date() },
-  }))
+export async function loadFinancialStore(workspaceId: string): Promise<MultiWalletStore> {
+  return (await loadFinancialStoreSnapshot(workspaceId)).store
+}
+
+export async function saveFinancialStore(workspaceId: string, store: MultiWalletStore, expectedRevision: number) {
+  const nextRevision = expectedRevision + 1
+  const saved = await withWorkspace(workspaceId, async database => {
+    if (expectedRevision === 0) {
+      const [created] = await database.insert(financialStores).values({ workspaceId, data: store, revision: nextRevision, updatedAt: new Date() })
+        .onConflictDoNothing().returning({ revision: financialStores.revision })
+      return created
+    }
+    const [updated] = await database.update(financialStores).set({ data: store, revision: nextRevision, updatedAt: new Date() })
+      .where(and(eq(financialStores.workspaceId, workspaceId), eq(financialStores.revision, expectedRevision)))
+      .returning({ revision: financialStores.revision })
+    return updated
+  })
+  if (!saved) throw new FinancialStoreConflictError()
+  return saved.revision
 }
 
 export function materializeMonth(wallet: Wallet, monthId: string): AppData {

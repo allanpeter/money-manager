@@ -142,6 +142,12 @@ function ShellInner({ children, userName }: Readonly<{ children: React.ReactNode
             Não foi possível salvar a última alteração no servidor. Verifique a conexão; ela ainda está aberta nesta tela.
           </p>
         )}
+        {app.saveConflict && (
+          <p className="flex items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
+            <span>Seus dados foram alterados em outra sessão. As alterações desta tela não foram salvas.</span>
+            <button type="button" onClick={() => window.location.reload()} className="rounded-lg border border-amber-400/40 px-2 py-1 text-xs font-medium hover:bg-amber-400/10">Recarregar</button>
+          </p>
+        )}
         <div className="flex h-16 items-center border-b border-zinc-900 px-4 lg:hidden">
           <button
             type="button"

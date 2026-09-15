@@ -7,7 +7,7 @@ import {
 import { DEFAULT_DATA } from "./defaults"
 import { uid, DEFAULT_CURRENCY, DEFAULT_LOCALE, COLORS } from "./utils"
 import { currentMonthId, isMonthId, monthLabel, shiftMonth, monthWindow, monthRange } from "./months"
-import { StorageAdapter, localStorageAdapter } from "./storage"
+import { StorageAdapter, StorageConflictError, localStorageAdapter } from "./storage"
 import { creditCardInvoicesForMonth, invoiceAsBill, invoiceBreakdown } from "./credit-cards"
 import { isRecurringActive } from "./bills"
 
@@ -236,14 +236,17 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [saveError, setSaveError] = useState(false)
+  const [saveConflict, setSaveConflict] = useState(false)
   const [windowCenter, setWindowCenter] = useState(currentMonthId)
 
   const save = useCallback(async (next: MultiWalletStore) => {
     try {
       await adapter.save(next)
       setSaveError(false)
-    } catch {
-      setSaveError(true)
+      setSaveConflict(false)
+    } catch (error) {
+      if (error instanceof StorageConflictError) setSaveConflict(true)
+      else setSaveError(true)
     }
   }, [adapter])
 
@@ -265,6 +268,7 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
       setStore(next)
       setWindowCenter(next.activeMonthId)
       setLoadError(false)
+      setSaveConflict(false)
       setLoaded(true)
       if (dirty) void save(next)
     }).catch(() => {
@@ -776,6 +780,7 @@ export function useAppData(adapter: StorageAdapter = localStorageAdapter) {
     loaded,
     loadError,
     saveError,
+    saveConflict,
     totalIncome,
     manualIncome,
     manualExpenses,

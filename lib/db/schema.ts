@@ -93,6 +93,7 @@ export const financialProfiles = pgTable("financial_profiles", {
 export const financialStores = pgTable("financial_stores", {
   workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).primaryKey(),
   data: jsonb("data").notNull().default(sql`'{}'::jsonb`),
+  revision: integer("revision").default(0).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 })
 

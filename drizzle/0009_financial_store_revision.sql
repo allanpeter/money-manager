@@ -1,0 +1,2 @@
+ALTER TABLE financial_stores
+  ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
