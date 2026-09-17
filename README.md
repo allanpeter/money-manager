@@ -3,6 +3,9 @@
 Sistema interno de contas a pagar com Next.js, PostgreSQL e assistente financeiro
 por linguagem natural.
 
+> A refatoração para livro financeiro completo está registrada em
+> [`docs/architecture/refactor-roadmap.md`](docs/architecture/refactor-roadmap.md).
+
 > A aplicação possui login, sessões persistidas no PostgreSQL e isolamento por
 > workspace com Row-Level Security. Ainda assim, publique somente atrás de HTTPS
 > ou em rede privada/Tailscale.
