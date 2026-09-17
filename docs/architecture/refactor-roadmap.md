@@ -19,7 +19,7 @@ domínio.
 | Passo | Entrega | Status | Início | Conclusão |
 |---:|---|---|---|---|
 | 1 | Registrar decisões em ADRs | Concluído | 17/09/2026 | 17/09/2026 |
-| 2 | Criar o novo esquema relacional | Pendente | — | — |
+| 2 | Criar o novo esquema relacional | Concluído | 17/09/2026 | 17/09/2026 |
 | 3 | Remover o modelo financeiro atual e o JSON | Pendente | — | — |
 | 4 | Implementar ledger e cálculo patrimonial | Pendente | — | — |
 | 5 | Refazer a interface sobre o modelo novo | Pendente | — | — |
@@ -64,10 +64,10 @@ Escopo:
 
 Critérios de saída:
 
-- [ ] Diagrama e dicionário de dados revisados.
-- [ ] Constraints garantem que cada lançamento seja balanceado.
-- [ ] Índices e isolamento por workspace definidos.
-- [ ] Migration validada em banco descartável.
+- [x] Diagrama e dicionário de dados revisados.
+- [x] Constraints garantem que cada lançamento seja balanceado.
+- [x] Índices e isolamento por workspace definidos.
+- [x] Migration validada em banco descartável.
 
 ## 3. Remover o modelo financeiro atual e o JSON
 
@@ -212,6 +212,33 @@ Critérios de saída:
 - Definido painel administrativo operacional, sem acesso a valores financeiros.
 - Definida análise informativa de desempenho e benchmarks, sem recomendação.
 - ADRs iniciais aceitos e passo 1 concluído.
+
+### 17/09/2026 — início do passo 2
+
+- Iniciado o desenho do schema relacional definitivo.
+- O passo 2 será somente aditivo; a remoção do legado permanece reservada ao
+  passo 3.
+
+### 17/09/2026 — conclusão do passo 2
+
+- Criados os schemas `finance` e `ops`, com 30 tabelas para ledger, contas,
+  cartões, patrimônio, investimentos, planejamento, ingestão, agentes e
+  operação do produto.
+- Registrados o diagrama, o dicionário e as invariantes em
+  `financial-data-model.md`.
+- Adicionado isolamento por RLS forçado em 27 tabelas privadas e validação de
+  referências para impedir vínculos entre workspaces.
+- Adicionados constraint triggers diferidos que exigem pelo menos duas
+  partidas e saldo zero em cada lançamento publicado.
+- A migration `0010_financial_ledger` foi aplicada sobre uma cópia descartável
+  do schema de produção e validada com a role não privilegiada da aplicação.
+- O teste comprovou: visibilidade limitada ao workspace ativo, ausência de
+  acesso sem contexto, rejeição de referência cruzada, rejeição de lançamento
+  desbalanceado e aceite de lançamento balanceado.
+- Catálogo verificado: 27/27 tabelas privadas com RLS forçado, 27 policies, 20
+  triggers de coerência de workspace e 2 triggers contábeis.
+- O banco temporário `money_manager_step2_20260917` foi removido após a
+  validação.
 
 ### Contexto anterior relevante
 

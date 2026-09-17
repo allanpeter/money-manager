@@ -71,6 +71,13 @@
       "when": 1789516451935,
       "tag": "0009_financial_store_revision",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789655342250,
+      "tag": "0010_financial_ledger",
+      "breakpoints": true
     }
   ]
 }
